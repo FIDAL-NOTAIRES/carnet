@@ -164,19 +164,19 @@ function ligne(p) {
   var m = manques(p);
   return '<tr class="p' + (p.actif ? '' : ' inactif') + '" data-id="' + p.id + '"><td>' + h([p.civilite, p.prenom, p.nom].filter(Boolean).join(' ')) + (p.actif ? '' : ' (inactif)') + '</td>' +
     '<td>' + h(p.fonction) + (p.service ? '<br><span class="info">' + h(p.service) + '</span>' : '') + '</td>' +
-    '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(p.telephone || (p.site ? p.site.telephone : '')) + '</td>' +
+    '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(p.telephone || (p.site ? p.site.telephone : '')) + '</td><td>' + h(p.portable) + '</td>' +
     '<td>' + (m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
 }
 function bloc(liste, titre, ouvert) {
   var t = '<details class="n2"' + (ouvert ? ' open' : '') + '><summary>' + titre + '<small>' + liste.length + '</small></summary>';
   if (!liste.length) return t + '<p class="info">Personne.</p></details>';
-  return t + '<div class="tableau"><table><thead><tr><th>Nom</th><th>Fonction / service</th><th>Site</th><th>Courriel</th><th>Téléphone</th><th></th></tr></thead><tbody>' +
+  return t + '<div class="tableau"><table><thead><tr><th>Nom</th><th>Fonction / service</th><th>Site</th><th>Courriel</th><th>Téléphone</th><th>Portable</th><th></th></tr></thead><tbody>' +
     liste.map(ligne).join('') + '</tbody></table></div></details>';
 }
 function vueAnnuaire() {
   var mots = sansAccent(RECH).split(/\s+/).filter(Boolean);
   var liste = DONNEES.personnes.filter(function (p) {
-    var tas = sansAccent([p.nom, p.prenom, p.fonction, p.service, p.courriel, p.initiales, p.site && p.site.nom].join(' '));
+    var tas = sansAccent([p.nom, p.prenom, p.fonction, p.service, p.courriel, p.initiales, p.site && p.site.nom].join(' ')) + ' ' + [p.telephone, p.portable].join(' ').replace(/\D/g, '');
     return mots.every(function (m) { return tas.indexOf(m) >= 0; });
   });
   var ouvre = mots.length > 0;
@@ -244,6 +244,7 @@ function fichePersonne(p) {
     '<div><label>Service</label>' + choixServices(p.service) + '</div>' +
     '<div><label>Courriel</label><input name="courriel" type="email" value="' + h(p.courriel) + '"></div>' +
     '<div><label>Téléphone</label><input name="telephone" value="' + h(p.telephone) + '" placeholder="à défaut, celui du site"></div>' +
+    '<div><label>Portable</label><input name="portable" value="' + h(p.portable) + '" placeholder="06 …"></div>' +
     '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
     '<div><label>Initiales</label><input name="initiales" value="' + h(p.initiales) + '" maxlength="10"></div>' +
     '</div><p class="erreur" id="ePers"></p><div class="actions">' +
@@ -257,7 +258,7 @@ function fichePersonne(p) {
   document.getElementById('bAnnuler').onclick = fermer;
   form.onsubmit = function (ev) {
     ev.preventDefault();
-    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
+    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'portable', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
     d.service = lireServices(form);
     d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
     if (!n) d.id = p.id;
