@@ -1,0 +1,9 @@
+{
+  "name": "carnet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CARNET — annuaire commun des associés et collaborateurs de FIDAL Notaires",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}

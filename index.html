@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>CARNET · FIDAL Notaires</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--nuit:#0F2238;--canard:#33838B;--orange:#FF982D;--carmin:#A01040;--fond:#F5F6F8;--trait:#DDE1E7;--texte:#1B2430;--doux:#5E6875}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;color:var(--texte);background:var(--fond)}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;color:var(--nuit);font-weight:normal}
+header{background:var(--nuit);color:#fff;padding:12px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{color:#fff;margin:0;font-size:22px;letter-spacing:.06em}
+header small{opacity:.75}
+header nav{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+header nav button{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:6px;padding:6px 11px;font:inherit;cursor:pointer}
+header nav button:hover,header nav button[aria-pressed="true"]{background:rgba(255,255,255,.14)}
+main{max-width:1100px;margin:0 auto;padding:20px}
+.carte{background:#fff;border:1px solid var(--trait);border-radius:10px;padding:18px 20px;margin-bottom:16px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--canard);background:var(--canard);color:#fff;border-radius:7px;padding:8px 14px;font:inherit;cursor:pointer}
+.btn.second{background:#fff;color:var(--nuit);border-color:#9AA5B1}
+.btn.danger{background:#fff;color:var(--carmin);border-color:var(--carmin)}
+.btn:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;border:1px solid var(--trait);border-radius:6px;padding:7px 9px;background:#fff;color:var(--texte)}
+input:focus,select:focus{outline:2px solid var(--canard);outline-offset:-1px}
+label{display:block;font-size:12px;color:var(--doux);margin-bottom:3px}
+.barre{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.barre input[type=search]{flex:1;min-width:220px}
+details.n1{background:#fff;border:1px solid var(--trait);border-radius:10px;margin-bottom:12px}
+details.n1>summary{padding:12px 16px;font-family:Georgia,serif;font-size:18px;color:var(--nuit);cursor:pointer}
+details.n2{margin:0 12px 10px}
+details.n2>summary{padding:7px 4px;font-weight:600;cursor:pointer;color:var(--canard)}
+summary small{color:var(--doux);font-family:"Segoe UI",sans-serif;font-size:13px;font-weight:normal;margin-left:6px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--trait);vertical-align:top}
+th{font-size:12px;color:var(--doux);font-weight:600}
+tr.p{cursor:pointer}
+tr.p:hover td{background:var(--fond)}
+tr.inactif td{font-style:italic;color:var(--doux)}
+.manque{color:var(--orange);font-size:12px;white-space:nowrap}
+.tableau{overflow-x:auto}
+#fenetre{position:fixed;inset:0;background:rgba(15,34,56,.6);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow-y:auto}
+#fenetre[hidden]{display:none}
+#fenetre .carte{max-width:640px;width:100%;border-top:5px solid var(--canard)}
+.grille{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grille .large{grid-column:1/-1}
+.grille input,.grille select{width:100%}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
+.erreur{color:var(--carmin);margin:8px 0 0}
+.info{color:var(--doux);font-size:13px}
+.depot{border:2px dashed #9AA5B1;border-radius:10px;padding:22px;text-align:center;color:var(--doux);cursor:pointer;background:#fff}
+.depot.survol{border-color:var(--canard);background:#EEF6F7}
+.depot.ok{border-style:solid;border-color:var(--canard);color:var(--nuit)}
+.deux{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cle-affichee{font-family:Consolas,monospace;background:var(--fond);border:1px solid var(--trait);padding:10px;border-radius:6px;word-break:break-all;user-select:all}
+.pastille{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;background:var(--fond);border:1px solid var(--trait)}
+@media (max-width:700px){.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>CARNET</h1><small>Annuaire des associés et collaborateurs · FIDAL Notaires</small>
+  <nav id="menu" hidden>
+    <button type="button" data-vue="annuaire" aria-pressed="true">Annuaire</button>
+    <button type="button" data-vue="sites">Sites</button>
+    <button type="button" data-vue="import">Import initial</button>
+    <button type="button" data-vue="cles">Clés des outils</button>
+    <button type="button" data-vue="journal">Journal</button>
+    <button type="button" id="deconnexion">Se déconnecter</button>
+  </nav>
+</header>
+<main id="zone"></main>
+<div id="fenetre" hidden role="dialog" aria-modal="true"></div>
+
+<script>
+/* CARNET — écran d'administration (lot 1, 04/11/2026). Modification réservée à l'administrateur. */
+var JETON = sessionStorage.getItem('carnet_jeton') || '';
+var DONNEES = { personnes: [], sites: [] };
+var VUE = 'annuaire';
+var zone = document.getElementById('zone');
+
+function h(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function sansAccent(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function api(action, corps) {
+  return fetch('/api/carnet', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, JETON ? { Authorization: 'Bearer ' + JETON } : {}),
+    body: JSON.stringify(Object.assign({ action: action }, corps || {})) })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) {
+      if (r.status === 401 && action !== 'connexion') { JETON = ''; sessionStorage.removeItem('carnet_jeton'); ecranConnexion('Session expirée, reconnectez-vous.'); throw new Error('session'); }
+      if (!r.ok) throw new Error(d.erreur || ('Erreur ' + r.status));
+      return d;
+    }); });
+}
+
+/* ---------- civilité proposée selon le prénom (modifiable ; vide si inconnu ou mixte) ---------- */
+var PRENOMS_F = 'emma flore valerie julie anne-claude aurore laure magali claire gwenaelle alexia melodie celine aude zoe louise cloe aurelie charlotte linda lydia clementine magdeleine juliette caroline sonya barbara helene eva ophelie doryse anne-sophie stephanie marina marie-pierre angelique stacey maud flora mathilde menaka nathalie marie anne sophie isabelle catherine christine sylvie sandrine nathalie caroline emilie elodie lea manon chloe ines sarah laura pauline marion lucie camille-anne agathe beatrice delphine florence helene jeanne margaux mathilde patricia valentine virginie'.split(' ');
+var PRENOMS_M = 'christopher maximilien guillaume akram paul raphael victor yann aymar daniel sebastien charles mathieu francois-xavier pierre jean-francois nicolas stephane jean francois philippe michel alain thomas nicolas julien antoine alexandre olivier laurent frederic vincent bertrand arnaud benoit bruno cedric david eric emmanuel etienne fabrice gilles hugo jacques jerome louis lucas marc martin maxime patrick romain thierry xavier'.split(' ');
+function civiliteDe(prenom) {
+  var p = sansAccent(prenom).trim();
+  if (PRENOMS_F.indexOf(p) >= 0) return 'Madame';
+  if (PRENOMS_M.indexOf(p) >= 0) return 'Monsieur';
+  return '';
+}
+
+/* ---------- démarrage ---------- */
+function demarrer() {
+  api('etat').then(function (e) {
+    if (!e.pret) return ecranConfiguration(e);
+    if (!JETON) return ecranConnexion();
+    document.getElementById('menu').hidden = false;
+    charger();
+  }).catch(function (err) { if (err.message !== 'session') zone.innerHTML = '<div class="carte"><p class="erreur">' + h(err.message) + '</p></div>'; });
+}
+function ecranConfiguration(e) {
+  var octets = new Uint8Array(32); crypto.getRandomValues(octets);
+  var cle = btoa(String.fromCharCode.apply(null, octets));
+  zone.innerHTML = '<div class="carte"><h2>Configuration à terminer</h2>' +
+    '<p>Variables absentes ou invalides sur Vercel : <b>' + h((e.manque || []).concat(e.cle_invalide ? ['CARNET_CLE_CHIFFREMENT (invalide)'] : []).join(', ')) + '</b>.</p>' +
+    ((e.manque || []).indexOf('CARNET_CLE_CHIFFREMENT') >= 0 || e.cle_invalide ?
+      '<p>Clé de chiffrement générée dans votre navigateur (elle n’a été envoyée nulle part). Copiez-la dans la variable <b>CARNET_CLE_CHIFFREMENT</b>, puis gardez-en une copie sur votre clé physique : sans elle, les coordonnées chiffrées seraient perdues.</p>' +
+      '<p class="cle-affichee">' + h(cle) + '</p>' : '') +
+    '<p class="info">Rechargez cette page après avoir enregistré les variables et redéployé le projet.</p></div>';
+}
+function ecranConnexion(msg) {
+  document.getElementById('menu').hidden = true;
+  zone.innerHTML = '<div class="carte" style="max-width:420px;margin:40px auto"><h2>Connexion</h2>' +
+    '<form id="fConnexion"><label for="mdp">Mot de passe administrateur</label><input type="password" id="mdp" autocomplete="current-password" style="width:100%">' +
+    '<p class="erreur" id="eConnexion">' + h(msg || '') + '</p><div class="actions"><button class="btn" type="submit">Se connecter</button></div></form></div>';
+  document.getElementById('mdp').focus();
+  document.getElementById('fConnexion').onsubmit = function (ev) {
+    ev.preventDefault();
+    api('connexion', { mdp: document.getElementById('mdp').value }).then(function (d) {
+      JETON = d.jeton; sessionStorage.setItem('carnet_jeton', JETON);
+      document.getElementById('menu').hidden = false; charger();
+    }).catch(function (err) { document.getElementById('eConnexion').textContent = err.message; });
+  };
+}
+document.getElementById('deconnexion').onclick = function () { JETON = ''; sessionStorage.removeItem('carnet_jeton'); ecranConnexion(); };
+document.getElementById('menu').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-vue]'); if (!b) return;
+  VUE = b.getAttribute('data-vue');
+  document.querySelectorAll('#menu [data-vue]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+  afficher();
+});
+function charger() { return api('liste').then(function (d) { DONNEES = d; afficher(); }).catch(function (err) { if (err.message !== 'session') alert(err.message); }); }
+function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImport, cles: vueCles, journal: vueJournal })[VUE](); }
+
+/* ---------- annuaire : 1er niveau actifs / inactifs, 2e niveau associés / collaborateurs ---------- */
+var RECH = '';
+function manques(p) {
+  var m = []; if (!p.fonction) m.push('fonction'); if (!p.service) m.push('service'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
+  return m;
+}
+function ligne(p) {
+  var m = manques(p);
+  return '<tr class="p' + (p.actif ? '' : ' inactif') + '" data-id="' + p.id + '"><td>' + h([p.civilite, p.prenom, p.nom].filter(Boolean).join(' ')) + (p.actif ? '' : ' (inactif)') + '</td>' +
+    '<td>' + h(p.fonction) + (p.service ? '<br><span class="info">' + h(p.service) + '</span>' : '') + '</td>' +
+    '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(p.telephone || (p.site ? p.site.telephone : '')) + '</td>' +
+    '<td>' + (m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
+}
+function bloc(liste, titre, ouvert) {
+  var t = '<details class="n2"' + (ouvert ? ' open' : '') + '><summary>' + titre + '<small>' + liste.length + '</small></summary>';
+  if (!liste.length) return t + '<p class="info">Personne.</p></details>';
+  return t + '<div class="tableau"><table><thead><tr><th>Nom</th><th>Fonction / service</th><th>Site</th><th>Courriel</th><th>Téléphone</th><th></th></tr></thead><tbody>' +
+    liste.map(ligne).join('') + '</tbody></table></div></details>';
+}
+function vueAnnuaire() {
+  var mots = sansAccent(RECH).split(/\s+/).filter(Boolean);
+  var liste = DONNEES.personnes.filter(function (p) {
+    var tas = sansAccent([p.nom, p.prenom, p.fonction, p.service, p.courriel, p.initiales, p.site && p.site.nom].join(' '));
+    return mots.every(function (m) { return tas.indexOf(m) >= 0; });
+  });
+  var ouvre = mots.length > 0;
+  function part(actif, cat) { return liste.filter(function (p) { return p.actif === actif && p.categorie === cat; }); }
+  var nA = liste.filter(function (p) { return p.actif; }).length, nI = liste.length - nA;
+  zone.innerHTML = '<div class="barre"><input type="search" id="rech" placeholder="Rechercher : nom, fonction, site, courriel…" value="' + h(RECH) + '">' +
+    '<button class="btn" type="button" id="ajout">+ Ajouter une personne</button></div>' +
+    '<details class="n1" open><summary>Actifs<small>' + nA + '</small></summary>' + bloc(part(true, 'associe'), 'Associés', true) + bloc(part(true, 'collaborateur'), 'Collaborateurs', true) + '</details>' +
+    '<details class="n1"' + (ouvre && nI ? ' open' : '') + '><summary>Inactifs<small>' + nI + '</small></summary>' + bloc(part(false, 'associe'), 'Associés', ouvre) + bloc(part(false, 'collaborateur'), 'Collaborateurs', ouvre) + '</details>';
+  var r = document.getElementById('rech');
+  r.oninput = function () { RECH = r.value; var pos = r.selectionStart; vueAnnuaire(); var n = document.getElementById('rech'); n.focus(); n.setSelectionRange(pos, pos); };
+  document.getElementById('ajout').onclick = function () { fichePersonne(null); };
+  zone.querySelectorAll('tr.p').forEach(function (tr) { tr.onclick = function () { fichePersonne(DONNEES.personnes.find(function (p) { return p.id === +tr.getAttribute('data-id'); })); }; });
+}
+function optionsSites(sel) {
+  return '<option value="">—</option>' + DONNEES.sites.map(function (s) { return '<option value="' + s.id + '"' + (s.id === sel ? ' selected' : '') + '>' + h(s.nom) + '</option>'; }).join('');
+}
+function fichePersonne(p) {
+  var n = !p; p = p || { categorie: 'collaborateur', actif: true };
+  var f = document.getElementById('fenetre');
+  f.innerHTML = '<div class="carte"><h2>' + (n ? 'Nouvelle personne' : h([p.prenom, p.nom].join(' '))) + (p.actif ? '' : ' <span class="pastille">inactif</span>') + '</h2>' +
+    '<form id="fPers"><div class="grille">' +
+    '<div><label>Catégorie</label><select name="categorie"><option value="associe"' + (p.categorie === 'associe' ? ' selected' : '') + '>Associé</option><option value="collaborateur"' + (p.categorie === 'collaborateur' ? ' selected' : '') + '>Collaborateur</option></select></div>' +
+    '<div><label>Civilité</label><select name="civilite"><option value="">—</option><option' + (p.civilite === 'Monsieur' ? ' selected' : '') + '>Monsieur</option><option' + (p.civilite === 'Madame' ? ' selected' : '') + '>Madame</option></select></div>' +
+    '<div><label>Prénom</label><input name="prenom" value="' + h(p.prenom) + '"></div>' +
+    '<div><label>Nom</label><input name="nom" value="' + h(p.nom) + '" required></div>' +
+    '<div><label>Fonction</label><input name="fonction" value="' + h(p.fonction) + '" placeholder="Notaire Associé, Clerc…"></div>' +
+    '<div><label>Service</label><input name="service" value="' + h(p.service) + '" placeholder="Immobilier, Direction Technique…"></div>' +
+    '<div><label>Courriel</label><input name="courriel" type="email" value="' + h(p.courriel) + '"></div>' +
+    '<div><label>Téléphone</label><input name="telephone" value="' + h(p.telephone) + '" placeholder="à défaut, celui du site"></div>' +
+    '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
+    '<div><label>Initiales</label><input name="initiales" value="' + h(p.initiales) + '" maxlength="10"></div>' +
+    '</div><p class="erreur" id="ePers"></p><div class="actions">' +
+    (n ? '' : '<button type="button" class="btn ' + (p.actif ? 'danger' : 'second') + '" id="bStatut">' + (p.actif ? 'Passer inactif' : 'Réactiver') + '</button>') +
+    '<button type="button" class="btn second" id="bAnnuler">Annuler</button><button type="submit" class="btn">Enregistrer</button></div></form></div>';
+  f.hidden = false;
+  var form = document.getElementById('fPers');
+  form.prenom.addEventListener('change', function () { if (!form.civilite.value) form.civilite.value = civiliteDe(form.prenom.value); });
+  document.getElementById('bAnnuler').onclick = fermer;
+  form.onsubmit = function (ev) {
+    ev.preventDefault();
+    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'fonction', 'service', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = form[k].value; });
+    if (!n) d.id = p.id;
+    api('enregistrer', d).then(function () { fermer(); charger(); }).catch(function (err) { document.getElementById('ePers').textContent = err.message; });
+  };
+  var bs = document.getElementById('bStatut');
+  if (bs) bs.onclick = function () {
+    if (p.actif && !confirm('Passer ' + [p.prenom, p.nom].join(' ') + ' en inactif ? La personne reste dans CARNET et dans les dossiers déjà ouverts, mais ne sera plus proposée.')) return;
+    api('statut', { id: p.id, actif: !p.actif }).then(function () { fermer(); charger(); }).catch(function (err) { document.getElementById('ePers').textContent = err.message; });
+  };
+}
+function fermer() { var f = document.getElementById('fenetre'); f.hidden = true; f.innerHTML = ''; }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fermer(); });
+document.getElementById('fenetre').addEventListener('mousedown', function (e) { if (e.target.id === 'fenetre') fermer(); });
+
+/* ---------- sites (liste fermée) ---------- */
+function vueSites() {
+  var nb = function (id) { return DONNEES.personnes.filter(function (p) { return p.site_id === id; }).length; };
+  zone.innerHTML = '<div class="carte"><h2>Sites de rattachement</h2><p class="info">Liste fermée des bureaux de l’étude. Un site ne peut être supprimé que s’il n’est plus celui de personne.</p>' +
+    '<div class="tableau"><table><thead><tr><th>Site</th><th>Code postal</th><th>Adresse</th><th>Téléphone</th><th>Personnes</th><th></th></tr></thead><tbody>' +
+    DONNEES.sites.map(function (s) {
+      return '<tr data-id="' + s.id + '"><td><input name="nom" value="' + h(s.nom) + '"></td><td><input name="code_postal" value="' + h(s.code_postal) + '" size="6"></td>' +
+        '<td><input name="adresse" value="' + h(s.adresse) + '"></td><td><input name="telephone" value="' + h(s.telephone) + '" size="14"></td><td>' + nb(s.id) + '</td>' +
+        '<td style="white-space:nowrap"><button class="btn second" data-enr>Enregistrer</button> <button class="btn danger" data-sup' + (nb(s.id) ? ' disabled' : '') + '>Supprimer</button></td></tr>';
+    }).join('') +
+    '<tr data-id=""><td><input name="nom" placeholder="Nouveau site"></td><td><input name="code_postal" size="6"></td><td><input name="adresse"></td><td><input name="telephone" size="14"></td><td></td><td><button class="btn" data-enr>Ajouter</button></td></tr>' +
+    '</tbody></table></div><p class="erreur" id="eSites"></p></div>';
+  zone.querySelectorAll('tr[data-id]').forEach(function (tr) {
+    var id = tr.getAttribute('data-id');
+    var lire = function () { var d = { id: id || undefined }; tr.querySelectorAll('input').forEach(function (i) { d[i.name] = i.value; }); return d; };
+    var e = tr.querySelector('[data-enr]'), s = tr.querySelector('[data-sup]');
+    if (e) e.onclick = function () { api('site_enregistrer', lire()).then(charger).catch(function (err) { document.getElementById('eSites').textContent = err.message; }); };
+    if (s) s.onclick = function () { if (confirm('Supprimer ce site ?')) api('site_supprimer', { id: id }).then(charger).catch(function (err) { document.getElementById('eSites').textContent = err.message; }); };
+  });
+}
+
+/* ---------- import initial des deux fichiers du Drive ---------- */
+var IMPORT = { associes: null, collaborateurs: null };
+function vueImport() {
+  zone.innerHTML = '<div class="carte"><h2>Import initial depuis le Drive</h2>' +
+    '<p class="info">Téléchargez les deux fichiers depuis le Drive, puis déposez-les ici. Ils sont lus dans votre navigateur ; seules les personnes retenues sont envoyées, chiffrées dès leur arrivée. Une personne dont le courriel est déjà dans CARNET est écartée, ce qui permet de relancer l’import sans doublon.</p>' +
+    '<div class="deux"><div class="depot" id="dA">Déposez « Liste associés »<br><small>ou cliquez pour choisir</small></div><div class="depot" id="dC">Déposez « Liste_collaborateurs.xlsx »<br><small>ou cliquez pour choisir</small></div></div>' +
+    '<div id="apercu"></div></div>';
+  brancherDepot('dA', 'associes'); brancherDepot('dC', 'collaborateurs'); apercu();
+}
+function brancherDepot(id, type) {
+  var d = document.getElementById(id), inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+  if (IMPORT[type]) { d.classList.add('ok'); d.innerHTML = '✓ ' + IMPORT[type].nom + '<br><small>' + IMPORT[type].personnes.length + ' personnes lues</small>'; }
+  d.onclick = function () { inp.click(); };
+  inp.onchange = function () { if (inp.files[0]) lireFichier(inp.files[0], type); };
+  d.ondragover = function (e) { e.preventDefault(); d.classList.add('survol'); };
+  d.ondragleave = function () { d.classList.remove('survol'); };
+  d.ondrop = function (e) { e.preventDefault(); d.classList.remove('survol'); if (e.dataTransfer.files[0]) lireFichier(e.dataTransfer.files[0], type); };
+}
+function cellule(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+function lireFichier(fichier, type) {
+  var r = new FileReader();
+  r.onload = function () {
+    try {
+      var wb = XLSX.read(new Uint8Array(r.result), { type: 'array' });
+      var personnes = [], sites = {};
+      wb.SheetNames.forEach(function (nomFeuille) {
+        var rows = XLSX.utils.sheet_to_json(wb.Sheets[nomFeuille], { header: 1, defval: '' });
+        rows.forEach(function (row) {
+          var c = row.map(cellule);
+          if (type === 'collaborateurs') {
+            /* colonnes : nom, prénom, mail, initiales, site, code postal, adresse, téléphone ; feuille « Données » : site, cp, adresse, téléphone */
+            if (/donn/i.test(nomFeuille)) { if (c[0] && /\d/.test(c[1])) sites[c[0].toUpperCase()] = { nom: c[0], code_postal: c[1], adresse: c[2], telephone: c[3] }; return; }
+            if (!c[0] || /^nom$/i.test(c[0]) || !c[1]) return;
+            if (c[4] && (c[5] || c[6] || c[7])) sites[c[4].toUpperCase()] = { nom: c[4], code_postal: c[5], adresse: c[6], telephone: c[7] };
+            personnes.push({ categorie: 'collaborateur', nom: c[0], prenom: c[1], courriel: /@/.test(c[2]) ? c[2] : '', initiales: c[3], site: c[4] });
+          } else {
+            /* colonnes : nom, prénom, mail, site, code postal, adresse, téléphone */
+            if (!c[0] || !/@/.test(c[2])) return;
+            if (c[3]) sites[c[3].toUpperCase()] = { nom: c[3], code_postal: c[4], adresse: c[5], telephone: c[6] };
+            personnes.push({ categorie: 'associe', nom: c[0], prenom: c[1], courriel: c[2], site: c[3], fonction: 'Notaire Associé' });
+          }
+        });
+      });
+      personnes.forEach(function (p) { p.civilite = civiliteDe(p.prenom); });
+      IMPORT[type] = { nom: fichier.name, personnes: personnes, sites: sites };
+      vueImport();
+    } catch (e) { alert('Lecture impossible : ' + e.message); }
+  };
+  r.readAsArrayBuffer(fichier);
+}
+function apercu() {
+  var el = document.getElementById('apercu');
+  if (!IMPORT.associes && !IMPORT.collaborateurs) { el.innerHTML = ''; return; }
+  var vus = {}, retenus = [], ecartes = [], sites = {};
+  DONNEES.personnes.forEach(function (p) { if (p.courriel) vus[p.courriel.toLowerCase()] = 'déjà dans CARNET'; });
+  ['associes', 'collaborateurs'].forEach(function (t) {
+    if (!IMPORT[t]) return;
+    Object.keys(IMPORT[t].sites).forEach(function (k) { sites[k] = sites[k] || IMPORT[t].sites[k]; });
+    IMPORT[t].personnes.forEach(function (p) {
+      var cle = (p.courriel || '').toLowerCase();
+      if (cle && vus[cle]) { ecartes.push(p.prenom + ' ' + p.nom + ' (' + (t === 'associes' ? 'associé' : 'collaborateur') + ') : ' + vus[cle]); return; }
+      if (cle) vus[cle] = 'déjà dans ' + (t === 'associes' ? 'la liste des associés' : 'la liste des collaborateurs');
+      retenus.push(p);
+    });
+  });
+  var sansCiv = retenus.filter(function (p) { return !p.civilite; }).length;
+  el.innerHTML = '<h3 style="margin-top:20px">Aperçu</h3><p><b>' + retenus.length + '</b> personnes à créer, <b>' + Object.keys(sites).length + '</b> sites ; ' + ecartes.length + ' écartée' + (ecartes.length > 1 ? 's' : '') + ' ; ' + sansCiv + ' sans civilité proposée (à compléter ensuite).</p>' +
+    (ecartes.length ? '<details><summary>Personnes écartées</summary><ul>' + ecartes.map(function (x) { return '<li>' + h(x) + '</li>'; }).join('') + '</ul></details>' : '') +
+    '<div class="tableau" style="max-height:340px;overflow:auto;margin-top:10px"><table><thead><tr><th>Catégorie</th><th>Civilité</th><th>Prénom NOM</th><th>Courriel</th><th>Site</th></tr></thead><tbody>' +
+    retenus.map(function (p) { return '<tr><td>' + (p.categorie === 'associe' ? 'Associé' : 'Collaborateur') + '</td><td>' + h(p.civilite || '—') + '</td><td>' + h(p.prenom + ' ' + p.nom) + '</td><td>' + h(p.courriel || '—') + '</td><td>' + h(p.site || '—') + '</td></tr>'; }).join('') +
+    '</tbody></table></div><p class="erreur" id="eImport"></p><div class="actions"><button class="btn" id="bImporter"' + (retenus.length ? '' : ' disabled') + '>Importer ' + retenus.length + ' personnes</button></div>';
+  document.getElementById('bImporter').onclick = function () {
+    var b = this; b.disabled = true; b.textContent = 'Import en cours…';
+    api('importer', { personnes: retenus, sites: Object.keys(sites).map(function (k) { return sites[k]; }) }).then(function (d) {
+      IMPORT = { associes: null, collaborateurs: null };
+      return charger().then(function () {
+        alert(d.crees + ' personne' + (d.crees > 1 ? 's' : '') + ' créée' + (d.crees > 1 ? 's' : '') + (d.ecartes.length ? '.\nÉcartées par le serveur :\n' + d.ecartes.join('\n') : '.'));
+        VUE = 'annuaire'; document.querySelectorAll('#menu [data-vue]').forEach(function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-vue') === 'annuaire')); }); afficher();
+      });
+    }).catch(function (err) { b.disabled = false; b.textContent = 'Importer'; document.getElementById('eImport').textContent = err.message; });
+  };
+}
+
+/* ---------- clés d'accès des outils ---------- */
+function vueCles() {
+  zone.innerHTML = '<div class="carte"><h2>Clés d’accès des outils</h2><p class="info">Chaque outil qui lit CARNET a sa propre clé, sans échéance, révocable à tout moment. La clé n’est affichée qu’une fois, à sa création : copiez-la dans la variable <b>CARNET_CLE</b> du projet Vercel de l’outil. Changez-la si elle a pu être vue (capture d’écran, message).</p>' +
+    '<div class="barre"><input id="nOutil" placeholder="Nom de l’outil (ex. ARGOSAdmin)"><button class="btn" id="bCle">Créer une clé</button></div><div id="nouvelleCle"></div><div id="lCles" class="info">Chargement…</div></div>';
+  document.getElementById('bCle').onclick = function () {
+    api('cle_creer', { outil: document.getElementById('nOutil').value }).then(function (d) {
+      document.getElementById('nouvelleCle').innerHTML = '<p><b>Clé créée — copiez-la maintenant, elle ne sera plus affichée :</b></p><p class="cle-affichee">' + h(d.cle) + '</p>';
+      document.getElementById('nOutil').value = ''; listeCles();
+    }).catch(function (err) { alert(err.message); });
+  };
+  listeCles();
+}
+function dateFr(d) { return d ? new Date(d).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'; }
+function listeCles() {
+  api('cles').then(function (d) {
+    document.getElementById('lCles').innerHTML = d.cles.length ? '<table><thead><tr><th>Outil</th><th>Début de la clé</th><th>Créée le</th><th>Dernier usage</th><th></th></tr></thead><tbody>' +
+      d.cles.map(function (c) { return '<tr' + (c.revoquee_le ? ' class="inactif"' : '') + '><td>' + h(c.outil) + '</td><td>' + h(c.debut) + '…</td><td>' + dateFr(c.cree_le) + '</td><td>' + dateFr(c.dernier_usage) + '</td><td>' +
+        (c.revoquee_le ? 'révoquée le ' + dateFr(c.revoquee_le) : '<button class="btn danger" data-rev="' + c.id + '">Révoquer</button>') + '</td></tr>'; }).join('') + '</tbody></table>' : 'Aucune clé pour l’instant.';
+    document.querySelectorAll('[data-rev]').forEach(function (b) { b.onclick = function () { if (confirm('Révoquer cette clé ? L’outil ne pourra plus lire CARNET tant qu’il n’aura pas reçu une nouvelle clé.')) api('cle_revoquer', { id: b.getAttribute('data-rev') }).then(listeCles); }; });
+  });
+}
+
+/* ---------- journal ---------- */
+function vueJournal() {
+  zone.innerHTML = '<div class="carte"><h2>Journal des modifications</h2><p class="info">Quel champ a changé, quand, et pour qui — jamais les valeurs (500 dernières lignes).</p><div id="lJournal" class="info">Chargement…</div></div>';
+  api('journal').then(function (d) {
+    document.getElementById('lJournal').innerHTML = d.lignes.length ? '<div class="tableau"><table><thead><tr><th>Date</th><th>Personne</th><th>Action</th><th>Champs modifiés</th><th>Origine</th></tr></thead><tbody>' +
+      d.lignes.map(function (l) { return '<tr><td>' + dateFr(l.le) + '</td><td>' + h(l.personne) + '</td><td>' + h(l.action) + '</td><td>' + h(l.champs || '') + '</td><td>' + h(l.origine) + '</td></tr>'; }).join('') + '</tbody></table></div>' : 'Aucune modification pour l’instant.';
+  });
+}
+
+demarrer();
+</script>
+</body>
+</html>
