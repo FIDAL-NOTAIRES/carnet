@@ -184,7 +184,7 @@ function vueAnnuaire() {
   zone.querySelectorAll('tr.p').forEach(function (tr) { tr.onclick = function () { fichePersonne(DONNEES.personnes.find(function (p) { return p.id === +tr.getAttribute('data-id'); })); }; });
 }
 /* 04/11 : liste des fonctions (choisie par JFD) ; « Autre » permet de préciser librement */
-var FONCTIONS = ['Notaire Associé', 'Notaire salarié', 'Comptabilité', 'Formalités', 'Autre'];
+var FONCTIONS = ['Notaire Associé', 'Notaire salarié', 'Clerc', 'Négociation', 'Comptabilité', 'Formalités', 'Autre'];
 function fonctionEstAutre(f) { return !!f && (f === 'Autre' || FONCTIONS.indexOf(f) < 0); }
 function optionsFonction(f) {
   var choix = fonctionEstAutre(f) ? 'Autre' : (f || '');
