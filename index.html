@@ -63,6 +63,11 @@ tr.inactif td{font-style:italic;color:var(--doux)}
 .multi-liste{padding:6px 9px}
 .case{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--texte);margin:5px 0;cursor:pointer}
 .case input{width:auto}
+.th-tri{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.fleches{display:inline-flex;flex-direction:column;line-height:1}
+.tri{background:none;border:0;padding:0 2px;font-size:9px;color:#B5BDC7;cursor:pointer;line-height:1.1}
+.tri:hover{color:var(--canard)}
+.tri.on{color:var(--canard)}
 .pastille{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;background:var(--fond);border:1px solid var(--trait)}
 @media (max-width:700px){.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
 </style>
@@ -167,11 +172,38 @@ function ligne(p) {
     '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(p.telephone || (p.site ? p.site.telephone : '')) + '</td><td>' + h(p.portable) + '</td>' +
     '<td>' + (m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
 }
-function bloc(liste, titre, ouvert) {
-  var t = '<details class="n2"' + (ouvert ? ' open' : '') + '><summary>' + titre + '<small>' + liste.length + '</small></summary>';
+/* 04/11 : tri montant / descendant sur chaque colonne (le même tri s'applique à tous les tableaux) */
+var TRI = { col: 'nom', sens: 1 };
+var COLONNES = [['nom', 'Nom'], ['fonction', 'Fonction / service'], ['site', 'Site'], ['courriel', 'Courriel'], ['telephone', 'Téléphone'], ['portable', 'Portable']];
+function cleTri(p, col) {
+  if (col === 'nom') return sansAccent(p.nom + ' ' + p.prenom);
+  if (col === 'fonction') return sansAccent((p.fonction || '') + ' ' + (p.service || ''));
+  if (col === 'site') return sansAccent(p.site ? p.site.nom : '');
+  if (col === 'telephone') return String(p.telephone || (p.site ? p.site.telephone : '')).replace(/\D/g, '');
+  if (col === 'portable') return String(p.portable || '').replace(/\D/g, '');
+  return sansAccent(p[col] || '');
+}
+function trier(liste) {
+  return liste.slice().sort(function (a, b) {
+    var x = cleTri(a, TRI.col), y = cleTri(b, TRI.col);
+    if (!x && y) return 1; if (x && !y) return -1;   /* les cases vides restent en bas, quel que soit le sens */
+    return (x.localeCompare(y, 'fr', { numeric: true }) || cleTri(a, 'nom').localeCompare(cleTri(b, 'nom'), 'fr')) * (x === y ? 1 : TRI.sens);
+  });
+}
+function entete() {
+  return COLONNES.map(function (c) {
+    var actif = TRI.col === c[0];
+    return '<th><span class="th-tri">' + c[1] + '<span class="fleches">' +
+      '<button type="button" class="tri' + (actif && TRI.sens === 1 ? ' on' : '') + '" data-col="' + c[0] + '" data-sens="1" title="Tri croissant" aria-label="' + c[1] + ' : tri croissant">▲</button>' +
+      '<button type="button" class="tri' + (actif && TRI.sens === -1 ? ' on' : '') + '" data-col="' + c[0] + '" data-sens="-1" title="Tri décroissant" aria-label="' + c[1] + ' : tri décroissant">▼</button>' +
+      '</span></span></th>';
+  }).join('') + '<th></th>';
+}
+function bloc(liste, titre, ouvert, cle) {
+  var t = '<details class="n2" data-k="' + cle + '"' + (ouvert ? ' open' : '') + '><summary>' + titre + '<small>' + liste.length + '</small></summary>';
   if (!liste.length) return t + '<p class="info">Personne.</p></details>';
-  return t + '<div class="tableau"><table><thead><tr><th>Nom</th><th>Fonction / service</th><th>Site</th><th>Courriel</th><th>Téléphone</th><th>Portable</th><th></th></tr></thead><tbody>' +
-    liste.map(ligne).join('') + '</tbody></table></div></details>';
+  return t + '<div class="tableau"><table><thead><tr>' + entete() + '</tr></thead><tbody>' +
+    trier(liste).map(ligne).join('') + '</tbody></table></div></details>';
 }
 function vueAnnuaire() {
   var mots = sansAccent(RECH).split(/\s+/).filter(Boolean);
@@ -180,12 +212,16 @@ function vueAnnuaire() {
     return mots.every(function (m) { return tas.indexOf(m) >= 0; });
   });
   var ouvre = mots.length > 0;
+  /* garde l'état ouvert / fermé des groupes quand on retrie ou qu'on cherche */
+  var etat = {}; zone.querySelectorAll('details[data-k]').forEach(function (d) { etat[d.getAttribute('data-k')] = d.open; });
+  function ouv(k, defaut) { return k in etat && !ouvre ? etat[k] : defaut; }
   function part(actif, cat) { return liste.filter(function (p) { return p.actif === actif && p.categorie === cat; }); }
   var nA = liste.filter(function (p) { return p.actif; }).length, nI = liste.length - nA;
   zone.innerHTML = '<div class="barre"><input type="search" id="rech" placeholder="Rechercher : nom, fonction, site, courriel…" value="' + h(RECH) + '">' +
     '<button class="btn" type="button" id="ajout">+ Ajouter une personne</button></div>' +
-    '<details class="n1" open><summary>Actifs<small>' + nA + '</small></summary>' + bloc(part(true, 'associe'), 'Associés', true) + bloc(part(true, 'collaborateur'), 'Collaborateurs', true) + '</details>' +
-    '<details class="n1"' + (ouvre && nI ? ' open' : '') + '><summary>Inactifs<small>' + nI + '</small></summary>' + bloc(part(false, 'associe'), 'Associés', ouvre) + bloc(part(false, 'collaborateur'), 'Collaborateurs', ouvre) + '</details>';
+    '<details class="n1" data-k="A"' + (ouv('A', true) ? ' open' : '') + '><summary>Actifs<small>' + nA + '</small></summary>' + bloc(part(true, 'associe'), 'Associés', ouv('Aa', true), 'Aa') + bloc(part(true, 'collaborateur'), 'Collaborateurs', ouv('Ac', true), 'Ac') + '</details>' +
+    '<details class="n1" data-k="I"' + (ouv('I', ouvre && nI) ? ' open' : '') + '><summary>Inactifs<small>' + nI + '</small></summary>' + bloc(part(false, 'associe'), 'Associés', ouv('Ia', ouvre), 'Ia') + bloc(part(false, 'collaborateur'), 'Collaborateurs', ouv('Ic', ouvre), 'Ic') + '</details>';
+  zone.querySelectorAll('button.tri').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); TRI = { col: b.getAttribute('data-col'), sens: +b.getAttribute('data-sens') }; vueAnnuaire(); }; });
   var r = document.getElementById('rech');
   r.oninput = function () { RECH = r.value; var pos = r.selectionStart; vueAnnuaire(); var n = document.getElementById('rech'); n.focus(); n.setSelectionRange(pos, pos); };
   document.getElementById('ajout').onclick = function () { fichePersonne(null); };
