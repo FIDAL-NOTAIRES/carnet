@@ -19,9 +19,9 @@ const { neon } = require("@neondatabase/serverless");
 const crypto = require("crypto");
 
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000;
-const CHAMPS_CHIFFRES = ["fonction", "service", "telephone", "courriel"];
+const CHAMPS_CHIFFRES = ["fonction", "service", "telephone", "portable", "courriel"];
 const LIBELLES = { nom: "nom", prenom: "prénom", civilite: "civilité", categorie: "catégorie", initiales: "initiales", site_id: "site",
-  fonction: "fonction", service: "service", telephone: "téléphone", courriel: "courriel" };
+  fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel" };
 
 // ---------- utilitaires ----------
 const sha256 = (t) => crypto.createHash("sha256").update(String(t), "utf8").digest();
@@ -83,7 +83,7 @@ async function personnes(sql, avecInactifs) {
   return lignes.map((p) => ({
     id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, initiales: p.initiales || "",
     actif: p.actif, inactif_le: p.inactif_le, maj_le: p.maj_le,
-    fonction: dechiffrer(p.fonction_c), service: dechiffrer(p.service_c), telephone: dechiffrer(p.telephone_c), courriel: dechiffrer(p.courriel_c),
+    fonction: dechiffrer(p.fonction_c), service: dechiffrer(p.service_c), telephone: dechiffrer(p.telephone_c), portable: dechiffrer(p.portable_c), courriel: dechiffrer(p.courriel_c),
     site_id: p.site_id, site: p.site_id ? { nom: p.site_nom, code_postal: p.site_cp || "", adresse: p.site_adresse || "", telephone: p.site_tel || "" } : null,
   }));
 }
@@ -101,7 +101,7 @@ function valider(c) {
     categorie: c.categorie === "associe" ? "associe" : "collaborateur",
     initiales: texte(c.initiales, 10).toUpperCase() || null,
     site_id: Number.isFinite(parseInt(c.site_id, 10)) ? parseInt(c.site_id, 10) : null,
-    fonction: texte(c.fonction, 120), service: texte(c.service, 120), telephone: texte(c.telephone, 40), courriel: texte(c.courriel, 200).toLowerCase(),
+    fonction: texte(c.fonction, 120), service: texte(c.service, 160), telephone: texte(c.telephone, 40), portable: texte(c.portable, 40), courriel: texte(c.courriel, 200).toLowerCase(),
   };
   if (!p.nom) throw new Error("Le nom est obligatoire.");
   if (p.courriel && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.courriel)) throw new Error("Courriel invalide : " + p.courriel);
@@ -126,9 +126,9 @@ const actions = {
       if (autre.length) throw new Error(`Ce courriel est déjà celui de ${nomComplet(autre[0])}.`);
     }
     if (!Number.isFinite(id)) {
-      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, courriel_c, courriel_empreinte)
+      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id},
-                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
+                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null);
       return { ok: true, id: r[0].id };
     }
@@ -138,7 +138,7 @@ const actions = {
     if (!modifies.length) return { ok: true, id, inchange: true };
     await sql`UPDATE carnet_personne SET nom = ${p.nom}, prenom = ${p.prenom}, civilite = ${p.civilite}, categorie = ${p.categorie},
               initiales = ${p.initiales}, site_id = ${p.site_id}, fonction_c = ${chiffrer(p.fonction)}, service_c = ${chiffrer(p.service)},
-              telephone_c = ${chiffrer(p.telephone)}, courriel_c = ${chiffrer(p.courriel)}, courriel_empreinte = ${emp}, maj_le = NOW()
+              telephone_c = ${chiffrer(p.telephone)}, portable_c = ${chiffrer(p.portable)}, courriel_c = ${chiffrer(p.courriel)}, courriel_empreinte = ${emp}, maj_le = NOW()
               WHERE id = ${id}`;
     await journaliser(sql, id, nomComplet(p), "correction", modifies.map((k) => LIBELLES[k]).join(", "));
     return { ok: true, id };
@@ -193,9 +193,9 @@ const actions = {
       try { p = valider({ ...l, site_id: idSite(l.site) }); } catch (e) { ecartes.push(`${texte(l.prenom)} ${texte(l.nom)} : ${e.message}`); continue; }
       const emp = empreinteCourriel(p.courriel);
       if (emp && (await sql`SELECT 1 FROM carnet_personne WHERE courriel_empreinte = ${emp}`).length) { ecartes.push(`${nomComplet(p)} : déjà présent`); continue; }
-      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, courriel_c, courriel_empreinte)
+      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id},
-                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
+                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null, "import");
       crees++;
     }
@@ -275,4 +275,3 @@ module.exports = async (req, res) => {
     return fin(e.message && !/relation|column|syntax/.test(e.message) ? 400 : 500, { erreur: e.message || "Erreur serveur" });
   }
 };
-      
