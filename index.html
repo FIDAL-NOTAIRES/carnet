@@ -63,9 +63,9 @@ tr.inactif td{font-style:italic;color:var(--doux)}
 .multi-liste{padding:6px 9px}
 .case{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--texte);margin:5px 0;cursor:pointer}
 .case input{width:auto}
-table.annuaire{table-layout:fixed;min-width:980px}
+table.annuaire{table-layout:fixed;min-width:1040px}
 table.annuaire td{overflow-wrap:anywhere}
-table.annuaire td:nth-child(5),table.annuaire td:nth-child(6){white-space:nowrap;overflow-wrap:normal}
+table.annuaire td:nth-child(6),table.annuaire td:nth-child(7){white-space:nowrap;overflow-wrap:normal}
 table.annuaire .manque{white-space:normal}
 .th-tri{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .fleches{display:inline-flex;flex-direction:column;line-height:1}
@@ -166,21 +166,30 @@ function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImpo
 /* ---------- annuaire : 1er niveau actifs / inactifs, 2e niveau associés / collaborateurs ---------- */
 var RECH = '';
 function manques(p) {
-  var m = []; if (!p.fonction) m.push('fonction'); if (!p.service) m.push('service'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
+  /* 04/11 soir : la signature d'un associé ne porte pas de service → service facultatif pour les associés */
+  var m = []; if (!p.fonction) m.push('fonction'); if (!p.service && p.categorie !== 'associe') m.push('service'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
   return m;
+}
+/* 04/11 : numéros affichés par paires, comme le téléphone du site (06 98 09 98 90 ; +33 6 98 09 98 90) */
+function formatTel(v) {
+  var s = String(v || '').trim(), d = s.replace(/\D/g, '');
+  if (/^\+33/.test(s.replace(/\s/g, '')) && d.length === 11) return '+33 ' + d.charAt(2) + ' ' + d.slice(3).replace(/(\d{2})(?=\d)/g, '$1 ');
+  if (d.length === 10 && d.charAt(0) === '0') return d.replace(/(\d{2})(?=\d)/g, '$1 ');
+  return s;
 }
 function ligne(p) {
   var m = manques(p);
   return '<tr class="p' + (p.actif ? '' : ' inactif') + '" data-id="' + p.id + '"><td>' + h([p.civilite, p.prenom, p.nom].filter(Boolean).join(' ')) + (p.actif ? '' : ' (inactif)') + '</td>' +
+    '<td>' + h(p.initiales) + '</td>' +
     '<td>' + h(p.fonction) + (p.service ? '<br><span class="info">' + h(p.service) + '</span>' : '') + '</td>' +
-    '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(p.telephone || (p.site ? p.site.telephone : '')) + '</td><td>' + h(p.portable) + '</td>' +
+    '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(formatTel(p.telephone || (p.site ? p.site.telephone : ''))) + '</td><td>' + h(formatTel(p.portable)) + '</td>' +
     '<td>' + (m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
 }
 /* 04/11 : tri montant / descendant sur chaque colonne (le même tri s'applique à tous les tableaux) */
 var TRI = { col: 'nom', sens: 1 };
 /* 04/11 : largeurs fixes, identiques pour tous les tableaux, pour que les colonnes des groupes s'alignent */
-var COLGROUP = '<colgroup><col style="width:19%"><col style="width:16%"><col style="width:11%"><col style="width:24%"><col style="width:10%"><col style="width:9%"><col style="width:11%"></colgroup>';
-var COLONNES = [['nom', 'Nom'], ['fonction', 'Fonction / service'], ['site', 'Site'], ['courriel', 'Courriel'], ['telephone', 'Téléphone'], ['portable', 'Portable']];
+var COLGROUP = '<colgroup><col style="width:17%"><col style="width:7%"><col style="width:15%"><col style="width:10%"><col style="width:22%"><col style="width:10%"><col style="width:10%"><col style="width:9%"></colgroup>';
+var COLONNES = [['nom', 'Nom'], ['initiales', 'Initiales'], ['fonction', 'Fonction / service'], ['site', 'Site'], ['courriel', 'Courriel'], ['telephone', 'Téléphone'], ['portable', 'Portable']];
 function cleTri(p, col) {
   if (col === 'nom') return sansAccent(p.nom + ' ' + p.prenom);
   if (col === 'fonction') return sansAccent((p.fonction || '') + ' ' + (p.service || ''));
@@ -302,6 +311,7 @@ function fichePersonne(p) {
     ev.preventDefault();
     var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'portable', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
     d.service = lireServices(form);
+    d.telephone = formatTel(d.telephone); d.portable = formatTel(d.portable);
     d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
     if (!n) d.id = p.id;
     api('enregistrer', d).then(function () { fermer(); charger(); }).catch(function (err) { document.getElementById('ePers').textContent = err.message; });
