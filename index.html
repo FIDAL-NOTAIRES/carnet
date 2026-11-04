@@ -167,6 +167,7 @@ function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImpo
 var RECH = '';
 function manques(p) {
   /* 04/11 soir : la signature d'un associé ne porte pas de service → service facultatif pour les associés */
+  if (p.sans_signature) return [];   /* 04/11 soir : case « sans signature de courriel » → pas d'alerte */
   var m = []; if (!p.fonction) m.push('fonction'); if (!p.service && p.categorie !== 'associe') m.push('service'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
   return m;
 }
@@ -183,7 +184,7 @@ function ligne(p) {
     '<td>' + h(p.initiales) + '</td>' +
     '<td>' + h(p.fonction) + (p.service ? '<br><span class="info">' + h(p.service) + '</span>' : '') + '</td>' +
     '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(formatTel(p.telephone || (p.site ? p.site.telephone : ''))) + '</td><td>' + h(formatTel(p.portable)) + '</td>' +
-    '<td>' + (m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
+    '<td>' + (p.sans_signature ? '<span class="info" title="Pas de signature de courriel">sans signature</span>' : m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
 }
 /* 04/11 : tri montant / descendant sur chaque colonne (le même tri s'applique à tous les tableaux) */
 var TRI = { col: 'nom', sens: 1 };
@@ -298,6 +299,7 @@ function fichePersonne(p) {
     '<div><label>Portable</label><input name="portable" value="' + h(p.portable) + '" placeholder="06 …"></div>' +
     '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
     '<div><label>Initiales</label><input name="initiales" value="' + h(p.initiales) + '" maxlength="10"></div>' +
+    '<div class="large"><label class="case"><input type="checkbox" name="sans_signature"' + (p.sans_signature ? ' checked' : '') + '> Sans signature de courriel <span class="info">(pas de courriel ni de signature : l’alerte de fiche incomplète ne s’affiche pas)</span></label></div>' +
     '</div><p class="erreur" id="ePers"></p><div class="actions">' +
     (n ? '' : '<button type="button" class="btn ' + (p.actif ? 'danger' : 'second') + '" id="bStatut">' + (p.actif ? 'Passer inactif' : 'Réactiver') + '</button>') +
     '<button type="button" class="btn second" id="bAnnuler">Annuler</button><button type="submit" class="btn">Enregistrer</button></div></form></div>';
@@ -311,6 +313,7 @@ function fichePersonne(p) {
     ev.preventDefault();
     var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'portable', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
     d.service = lireServices(form);
+    d.sans_signature = F.sans_signature.checked;
     d.telephone = formatTel(d.telephone); d.portable = formatTel(d.portable);
     d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
     if (!n) d.id = p.id;
