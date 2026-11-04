@@ -21,7 +21,7 @@ const crypto = require("crypto");
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000;
 const CHAMPS_CHIFFRES = ["fonction", "service", "telephone", "portable", "courriel"];
 const LIBELLES = { nom: "nom", prenom: "prénom", civilite: "civilité", categorie: "catégorie", initiales: "initiales", site_id: "site",
-  fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel" };
+  fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel", sans_signature: "sans signature" };
 
 // ---------- utilitaires ----------
 const sha256 = (t) => crypto.createHash("sha256").update(String(t), "utf8").digest();
@@ -81,7 +81,7 @@ async function personnes(sql, avecInactifs) {
     : await sql`SELECT p.*, s.nom AS site_nom, s.code_postal AS site_cp, s.adresse AS site_adresse, s.telephone AS site_tel
                 FROM carnet_personne p LEFT JOIN carnet_site s ON s.id = p.site_id WHERE p.actif ORDER BY p.nom, p.prenom`;
   return lignes.map((p) => ({
-    id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, initiales: p.initiales || "",
+    id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, initiales: p.initiales || "", sans_signature: !!p.sans_signature,
     actif: p.actif, inactif_le: p.inactif_le, maj_le: p.maj_le,
     fonction: dechiffrer(p.fonction_c), service: dechiffrer(p.service_c), telephone: dechiffrer(p.telephone_c), portable: dechiffrer(p.portable_c), courriel: dechiffrer(p.courriel_c),
     site_id: p.site_id, site: p.site_id ? { nom: p.site_nom, code_postal: p.site_cp || "", adresse: p.site_adresse || "", telephone: p.site_tel || "" } : null,
@@ -101,7 +101,7 @@ function valider(c) {
     categorie: c.categorie === "associe" ? "associe" : "collaborateur",
     initiales: texte(c.initiales, 10).toUpperCase() || null,
     site_id: Number.isFinite(parseInt(c.site_id, 10)) ? parseInt(c.site_id, 10) : null,
-    fonction: texte(c.fonction, 120), service: texte(c.service, 160), telephone: texte(c.telephone, 40), portable: texte(c.portable, 40), courriel: texte(c.courriel, 200).toLowerCase(),
+    fonction: texte(c.fonction, 120), service: texte(c.service, 160), telephone: texte(c.telephone, 40), portable: texte(c.portable, 40), sans_signature: c.sans_signature === true || c.sans_signature === "true", courriel: texte(c.courriel, 200).toLowerCase(),
   };
   if (!p.nom) throw new Error("Le nom est obligatoire.");
   if (p.courriel && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.courriel)) throw new Error("Courriel invalide : " + p.courriel);
@@ -126,8 +126,8 @@ const actions = {
       if (autre.length) throw new Error(`Ce courriel est déjà celui de ${nomComplet(autre[0])}.`);
     }
     if (!Number.isFinite(id)) {
-      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
-        VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id},
+      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, sans_signature, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
+        VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
                 ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null);
       return { ok: true, id: r[0].id };
@@ -137,7 +137,7 @@ const actions = {
     const modifies = Object.keys(LIBELLES).filter((k) => String(avant[k] == null ? "" : avant[k]) !== String(p[k] == null ? "" : p[k]));
     if (!modifies.length) return { ok: true, id, inchange: true };
     await sql`UPDATE carnet_personne SET nom = ${p.nom}, prenom = ${p.prenom}, civilite = ${p.civilite}, categorie = ${p.categorie},
-              initiales = ${p.initiales}, site_id = ${p.site_id}, fonction_c = ${chiffrer(p.fonction)}, service_c = ${chiffrer(p.service)},
+              initiales = ${p.initiales}, site_id = ${p.site_id}, sans_signature = ${p.sans_signature}, fonction_c = ${chiffrer(p.fonction)}, service_c = ${chiffrer(p.service)},
               telephone_c = ${chiffrer(p.telephone)}, portable_c = ${chiffrer(p.portable)}, courriel_c = ${chiffrer(p.courriel)}, courriel_empreinte = ${emp}, maj_le = NOW()
               WHERE id = ${id}`;
     await journaliser(sql, id, nomComplet(p), "correction", modifies.map((k) => LIBELLES[k]).join(", "));
@@ -193,8 +193,8 @@ const actions = {
       try { p = valider({ ...l, site_id: idSite(l.site) }); } catch (e) { ecartes.push(`${texte(l.prenom)} ${texte(l.nom)} : ${e.message}`); continue; }
       const emp = empreinteCourriel(p.courriel);
       if (emp && (await sql`SELECT 1 FROM carnet_personne WHERE courriel_empreinte = ${emp}`).length) { ecartes.push(`${nomComplet(p)} : déjà présent`); continue; }
-      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
-        VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id},
+      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, sans_signature, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
+        VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
                 ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null, "import");
       crees++;
