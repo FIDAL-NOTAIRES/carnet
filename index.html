@@ -55,6 +55,14 @@ tr.inactif td{font-style:italic;color:var(--doux)}
 .depot.ok{border-style:solid;border-color:var(--canard);color:var(--nuit)}
 .deux{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .cle-affichee{font-family:Consolas,monospace;background:var(--fond);border:1px solid var(--trait);padding:10px;border-radius:6px;word-break:break-all;user-select:all}
+.multi{position:relative;border:1px solid var(--trait);border-radius:6px;background:#fff}
+.multi>summary{list-style:none;padding:7px 28px 7px 9px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.multi>summary::-webkit-details-marker{display:none}
+.multi>summary::after{content:"▾";position:absolute;right:10px;top:7px;color:var(--doux)}
+.multi[open]>summary{border-bottom:1px solid var(--trait)}
+.multi-liste{padding:6px 9px}
+.case{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--texte);margin:5px 0;cursor:pointer}
+.case input{width:auto}
 .pastille{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;background:var(--fond);border:1px solid var(--trait)}
 @media (max-width:700px){.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
 </style>
@@ -190,6 +198,35 @@ function optionsFonction(f) {
   var choix = fonctionEstAutre(f) ? 'Autre' : (f || '');
   return '<option value="">—</option>' + FONCTIONS.map(function (x) { return '<option' + (x === choix ? ' selected' : '') + '>' + h(x) + '</option>'; }).join('');
 }
+/* 04/11 : service = un ou plusieurs secteurs cochés (choisis par JFD) ; « Autre » permet de préciser ; enregistré « Immobilier, Patrimoine » */
+var SERVICES = ['Immobilier', 'Patrimoine', 'Famille', 'Affaires', 'Autre'];
+function decouperServices(s) {
+  var morceaux = String(s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean), coches = [], autres = [];
+  morceaux.forEach(function (m) { var i = SERVICES.indexOf(m); if (i >= 0 && m !== 'Autre') coches.push(m); else if (m !== 'Autre') autres.push(m); else coches.push('Autre'); });
+  if (autres.length && coches.indexOf('Autre') < 0) coches.push('Autre');
+  return { coches: coches, autre: autres.join(', ') };
+}
+function choixServices(s) {
+  var d = decouperServices(s);
+  return '<details class="multi" id="dServices"><summary id="sServices">' + h(resumeServices(d.coches)) + '</summary><div class="multi-liste">' +
+    SERVICES.map(function (x) { return '<label class="case"><input type="checkbox" name="serviceCoche" value="' + h(x) + '"' + (d.coches.indexOf(x) >= 0 ? ' checked' : '') + '> ' + h(x) + '</label>'; }).join('') +
+    '</div></details><input name="serviceAutre" value="' + h(d.autre) + '" placeholder="Préciser le service (facultatif)" style="margin-top:6px' + (d.coches.indexOf('Autre') >= 0 ? '' : ';display:none') + '">';
+}
+function resumeServices(coches) { return coches.length ? coches.join(', ') : 'Choisir un ou plusieurs secteurs'; }
+function brancherServices(form) {
+  var cases = form.querySelectorAll('input[name="serviceCoche"]'), autre = form.elements.serviceAutre;
+  cases.forEach(function (c) { c.addEventListener('change', function () {
+    var coches = Array.prototype.filter.call(cases, function (x) { return x.checked; }).map(function (x) { return x.value; });
+    document.getElementById('sServices').textContent = resumeServices(coches);
+    var a = coches.indexOf('Autre') >= 0; autre.style.display = a ? '' : 'none'; if (a && c.value === 'Autre' && c.checked) autre.focus();
+  }); });
+}
+function lireServices(form) {
+  var coches = Array.prototype.filter.call(form.querySelectorAll('input[name="serviceCoche"]'), function (x) { return x.checked; }).map(function (x) { return x.value; });
+  var liste = coches.filter(function (x) { return x !== 'Autre'; });
+  if (coches.indexOf('Autre') >= 0) liste.push(form.elements.serviceAutre.value.trim() || 'Autre');
+  return liste.join(', ');
+}
 function optionsSites(sel) {
   return '<option value="">—</option>' + DONNEES.sites.map(function (s) { return '<option value="' + s.id + '"' + (s.id === sel ? ' selected' : '') + '>' + h(s.nom) + '</option>'; }).join('');
 }
@@ -204,7 +241,7 @@ function fichePersonne(p) {
     '<div><label>Nom</label><input name="nom" value="' + h(p.nom) + '" required></div>' +
     '<div><label>Fonction</label><select name="fonctionChoix">' + optionsFonction(p.fonction) + '</select>' +
     '<input name="fonctionAutre" value="' + h(FONCTIONS.indexOf(p.fonction) >= 0 ? '' : p.fonction) + '" placeholder="Préciser la fonction (facultatif)" style="margin-top:6px' + (fonctionEstAutre(p.fonction) ? '' : ';display:none') + '"></div>' +
-    '<div><label>Service</label><input name="service" value="' + h(p.service) + '" placeholder="Immobilier, Direction Technique…"></div>' +
+    '<div><label>Service</label>' + choixServices(p.service) + '</div>' +
     '<div><label>Courriel</label><input name="courriel" type="email" value="' + h(p.courriel) + '"></div>' +
     '<div><label>Téléphone</label><input name="telephone" value="' + h(p.telephone) + '" placeholder="à défaut, celui du site"></div>' +
     '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
@@ -215,11 +252,13 @@ function fichePersonne(p) {
   f.hidden = false;
   var form = document.getElementById('fPers'), F = form.elements;
   F.prenom.addEventListener('change', function () { if (!F.civilite.value) F.civilite.value = civiliteDe(F.prenom.value); });
+  brancherServices(form);
   F.fonctionChoix.addEventListener('change', function () { F.fonctionAutre.style.display = F.fonctionChoix.value === 'Autre' ? '' : 'none'; if (F.fonctionChoix.value === 'Autre') F.fonctionAutre.focus(); });
   document.getElementById('bAnnuler').onclick = fermer;
   form.onsubmit = function (ev) {
     ev.preventDefault();
-    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'service', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
+    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
+    d.service = lireServices(form);
     d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
     if (!n) d.id = p.id;
     api('enregistrer', d).then(function () { fermer(); charger(); }).catch(function (err) { document.getElementById('ePers').textContent = err.message; });
