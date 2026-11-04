@@ -183,6 +183,13 @@ function vueAnnuaire() {
   document.getElementById('ajout').onclick = function () { fichePersonne(null); };
   zone.querySelectorAll('tr.p').forEach(function (tr) { tr.onclick = function () { fichePersonne(DONNEES.personnes.find(function (p) { return p.id === +tr.getAttribute('data-id'); })); }; });
 }
+/* 04/11 : liste des fonctions (choisie par JFD) ; « Autre » permet de préciser librement */
+var FONCTIONS = ['Notaire Associé', 'Notaire salarié', 'Comptabilité', 'Formalités', 'Autre'];
+function fonctionEstAutre(f) { return !!f && (f === 'Autre' || FONCTIONS.indexOf(f) < 0); }
+function optionsFonction(f) {
+  var choix = fonctionEstAutre(f) ? 'Autre' : (f || '');
+  return '<option value="">—</option>' + FONCTIONS.map(function (x) { return '<option' + (x === choix ? ' selected' : '') + '>' + h(x) + '</option>'; }).join('');
+}
 function optionsSites(sel) {
   return '<option value="">—</option>' + DONNEES.sites.map(function (s) { return '<option value="' + s.id + '"' + (s.id === sel ? ' selected' : '') + '>' + h(s.nom) + '</option>'; }).join('');
 }
@@ -195,7 +202,8 @@ function fichePersonne(p) {
     '<div><label>Civilité</label><select name="civilite"><option value="">—</option><option' + (p.civilite === 'Monsieur' ? ' selected' : '') + '>Monsieur</option><option' + (p.civilite === 'Madame' ? ' selected' : '') + '>Madame</option></select></div>' +
     '<div><label>Prénom</label><input name="prenom" value="' + h(p.prenom) + '"></div>' +
     '<div><label>Nom</label><input name="nom" value="' + h(p.nom) + '" required></div>' +
-    '<div><label>Fonction</label><input name="fonction" value="' + h(p.fonction) + '" placeholder="Notaire Associé, Clerc…"></div>' +
+    '<div><label>Fonction</label><select name="fonctionChoix">' + optionsFonction(p.fonction) + '</select>' +
+    '<input name="fonctionAutre" value="' + h(FONCTIONS.indexOf(p.fonction) >= 0 ? '' : p.fonction) + '" placeholder="Préciser la fonction (facultatif)" style="margin-top:6px' + (fonctionEstAutre(p.fonction) ? '' : ';display:none') + '"></div>' +
     '<div><label>Service</label><input name="service" value="' + h(p.service) + '" placeholder="Immobilier, Direction Technique…"></div>' +
     '<div><label>Courriel</label><input name="courriel" type="email" value="' + h(p.courriel) + '"></div>' +
     '<div><label>Téléphone</label><input name="telephone" value="' + h(p.telephone) + '" placeholder="à défaut, celui du site"></div>' +
@@ -205,12 +213,14 @@ function fichePersonne(p) {
     (n ? '' : '<button type="button" class="btn ' + (p.actif ? 'danger' : 'second') + '" id="bStatut">' + (p.actif ? 'Passer inactif' : 'Réactiver') + '</button>') +
     '<button type="button" class="btn second" id="bAnnuler">Annuler</button><button type="submit" class="btn">Enregistrer</button></div></form></div>';
   f.hidden = false;
-  var form = document.getElementById('fPers');
-  form.prenom.addEventListener('change', function () { if (!form.civilite.value) form.civilite.value = civiliteDe(form.prenom.value); });
+  var form = document.getElementById('fPers'), F = form.elements;
+  F.prenom.addEventListener('change', function () { if (!F.civilite.value) F.civilite.value = civiliteDe(F.prenom.value); });
+  F.fonctionChoix.addEventListener('change', function () { F.fonctionAutre.style.display = F.fonctionChoix.value === 'Autre' ? '' : 'none'; if (F.fonctionChoix.value === 'Autre') F.fonctionAutre.focus(); });
   document.getElementById('bAnnuler').onclick = fermer;
   form.onsubmit = function (ev) {
     ev.preventDefault();
-    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'fonction', 'service', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = form[k].value; });
+    var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'service', 'courriel', 'telephone', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
+    d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
     if (!n) d.id = p.id;
     api('enregistrer', d).then(function () { fermer(); charger(); }).catch(function (err) { document.getElementById('ePers').textContent = err.message; });
   };
