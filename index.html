@@ -75,6 +75,23 @@ table.annuaire .manque{white-space:normal}
 .tri:hover{color:var(--canard)}
 .tri.on{color:var(--canard)}
 .pastille{display:inline-block;border-radius:10px;padding:1px 8px;font-size:12px;background:var(--fond);border:1px solid var(--trait)}
+/* 05/11 : signatures, export, contrôle des doublons */
+.alerte{border-left:5px solid var(--orange)}
+.alerte h3{margin:0 0 8px;font-size:17px}
+.alerte li{margin:6px 0}
+.alerte .btn{padding:3px 10px;font-size:12.5px;margin-left:6px}
+.apercu{border:1px solid var(--trait);border-radius:8px;background:#fff;padding:10px;overflow:hidden}
+.apercu .zoom{transform-origin:top left;width:730px}
+.sigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(510px,1fr));gap:10px}
+.sig{border:1px solid var(--trait);border-radius:8px;background:#fff;padding:8px 10px;overflow:hidden;position:relative}
+.sig .zoom{zoom:.68;width:730px}
+.sig .btn{position:absolute;right:8px;top:8px;padding:3px 9px;font-size:12px}
+.vide{background:#FFF3A3;color:#6B5A00;padding:0 3px}
+.ens{display:flex;flex-wrap:wrap;gap:4px 16px}
+.ens .case{margin:3px 0}
+.choix-pers{max-height:260px;overflow-y:auto;border:1px solid var(--trait);border-radius:6px;padding:6px 10px;columns:2}
+.choix-pers .case{break-inside:avoid}
+@media print{header,.sig .btn,.carte .btn{display:none}body{background:#fff}main{max-width:none;padding:0}details.n1{border:0;break-inside:auto}.sig{break-inside:avoid}}
 @media (max-width:700px){.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
 </style>
 </head>
@@ -83,6 +100,7 @@ table.annuaire .manque{white-space:normal}
   <h1>CARNET</h1><small>Annuaire des associés et collaborateurs · FIDAL Notaires</small>
   <nav id="menu" hidden>
     <button type="button" data-vue="annuaire" aria-pressed="true">Annuaire</button>
+    <button type="button" data-vue="signatures">Signatures</button>
     <button type="button" data-vue="sites">Sites</button>
     <button type="button" data-vue="import">Import initial</button>
     <button type="button" data-vue="cles">Clés des outils</button>
@@ -164,14 +182,14 @@ document.getElementById('menu').addEventListener('click', function (e) {
   afficher();
 });
 function charger() { return api('liste').then(function (d) { DONNEES = d; afficher(); }).catch(function (err) { if (err.message !== 'session') alert(err.message); }); }
-function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImport, cles: vueCles, ronde: vueRonde, journal: vueJournal })[VUE](); }
+function afficher() { ({ annuaire: vueAnnuaire, signatures: vueSignatures, sites: vueSites, import: vueImport, cles: vueCles, ronde: vueRonde, journal: vueJournal })[VUE](); }
 
 /* ---------- annuaire : 1er niveau actifs / inactifs, 2e niveau associés / collaborateurs ---------- */
 var RECH = '';
 function manques(p) {
   /* 04/11 soir : la signature d'un associé ne porte pas de service → service facultatif pour les associés */
   if (p.sans_signature) return [];   /* 04/11 soir : case « sans signature de courriel » → pas d'alerte */
-  var m = []; if (!p.fonction) m.push('fonction'); if (!p.service && p.categorie !== 'associe') m.push('service'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
+  var m = []; if (!p.fonction && p.categorie !== 'associe') m.push('fonction'); if (!p.courriel) m.push('courriel'); if (!p.telephone && !(p.site && p.site.telephone)) m.push('téléphone');
   return m;
 }
 /* 04/11 : numéros affichés par paires, comme le téléphone du site (06 98 09 98 90 ; +33 6 98 09 98 90) */
@@ -185,7 +203,7 @@ function ligne(p) {
   var m = manques(p);
   return '<tr class="p' + (p.actif ? '' : ' inactif') + '" data-id="' + p.id + '"><td>' + h([p.civilite, p.prenom, p.nom].filter(Boolean).join(' ')) + (p.actif ? '' : ' (inactif)') + '</td>' +
     '<td>' + h(p.initiales) + '</td>' +
-    '<td>' + h(p.fonction) + (p.service ? '<br><span class="info">' + h(p.service) + '</span>' : '') + '</td>' +
+    '<td>' + h(qualite(p) || p.fonction) + (p.ligne2 ? '<br><span class="info">' + h(p.ligne2) + '</span>' : '') + '</td>' +
     '<td>' + h(p.site ? p.site.nom : '') + '</td><td>' + h(p.courriel) + '</td><td>' + h(formatTel(p.telephone || (p.site ? p.site.telephone : ''))) + '</td><td>' + h(formatTel(p.portable)) + '</td>' +
     '<td>' + (p.sans_signature ? '<span class="info" title="Pas de signature de courriel">sans signature</span>' : m.length ? '<span class="manque" title="Éléments manquants pour la signature">⚠ ' + h(m.join(', ')) + '</span>' : '') + '</td></tr>';
 }
@@ -193,10 +211,10 @@ function ligne(p) {
 var TRI = { col: 'nom', sens: 1 };
 /* 04/11 : largeurs fixes, identiques pour tous les tableaux, pour que les colonnes des groupes s'alignent */
 var COLGROUP = '<colgroup><col style="width:17%"><col style="width:7%"><col style="width:15%"><col style="width:10%"><col style="width:22%"><col style="width:10%"><col style="width:10%"><col style="width:9%"></colgroup>';
-var COLONNES = [['nom', 'Nom'], ['initiales', 'Initiales'], ['fonction', 'Fonction / service'], ['site', 'Site'], ['courriel', 'Courriel'], ['telephone', 'Téléphone'], ['portable', 'Portable']];
+var COLONNES = [['nom', 'Nom'], ['initiales', 'Initiales'], ['fonction', 'Fonction'], ['site', 'Site'], ['courriel', 'Courriel'], ['telephone', 'Téléphone'], ['portable', 'Portable']];
 function cleTri(p, col) {
   if (col === 'nom') return sansAccent(p.nom + ' ' + p.prenom);
-  if (col === 'fonction') return sansAccent((p.fonction || '') + ' ' + (p.service || ''));
+  if (col === 'fonction') return sansAccent(qualite(p) + ' ' + (p.ligne2 || ''));
   if (col === 'site') return sansAccent(p.site ? p.site.nom : '');
   if (col === 'telephone') return String(p.telephone || (p.site ? p.site.telephone : '')).replace(/\D/g, '');
   if (col === 'portable') return String(p.portable || '').replace(/\D/g, '');
@@ -242,7 +260,7 @@ function bloc(liste, titre, ouvert, cle, classe) {
 function vueAnnuaire() {
   var mots = sansAccent(RECH).split(/\s+/).filter(Boolean);
   var liste = DONNEES.personnes.filter(function (p) {
-    var tas = sansAccent([p.nom, p.prenom, p.fonction, p.service, p.courriel, p.initiales, p.site && p.site.nom].join(' ')) + ' ' + [p.telephone, p.portable].join(' ').replace(/\D/g, '');
+    var tas = sansAccent([p.nom, p.prenom, p.fonction, p.ligne2, p.courriel, p.initiales, p.site && p.site.nom].join(' ')) + ' ' + [p.telephone, p.portable].join(' ').replace(/\D/g, '');
     return mots.every(function (m) { return tas.indexOf(m) >= 0; });
   });
   var ouvre = mots.length > 0;
@@ -252,13 +270,15 @@ function vueAnnuaire() {
   function part(actif, cat) { return liste.filter(function (p) { return p.actif === actif && p.categorie === cat; }); }
   var nA = liste.filter(function (p) { return p.actif; }).length, nI = liste.length - nA;
   zone.innerHTML = '<div class="barre"><input type="search" id="rech" placeholder="Rechercher : nom, fonction, site, courriel…" value="' + h(RECH) + '">' +
-    '<button class="btn" type="button" id="ajout">+ Ajouter une personne</button></div>' +
+    '<button class="btn second" type="button" id="bExport">Exporter</button><button class="btn" type="button" id="ajout">+ Ajouter une personne</button></div>' + encadreControle() +
     '<details class="n1" data-k="A"' + (ouv('A', true) ? ' open' : '') + '><summary>Actifs<small>' + nA + '</small></summary>' + bloc(part(true, 'associe'), 'Associés', ouv('Aa', true), 'Aa') + blocCollab(part(true, 'collaborateur'), ouv('Ac', true), 'Ac', ouv, true) + '</details>' +
     '<details class="n1" data-k="I"' + (ouv('I', ouvre && nI) ? ' open' : '') + '><summary>Inactifs<small>' + nI + '</small></summary>' + bloc(part(false, 'associe'), 'Associés', ouv('Ia', ouvre), 'Ia') + blocCollab(part(false, 'collaborateur'), ouv('Ic', ouvre), 'Ic', ouv, ouvre) + '</details>';
   zone.querySelectorAll('button.tri').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); TRI = { col: b.getAttribute('data-col'), sens: +b.getAttribute('data-sens') }; vueAnnuaire(); }; });
   var r = document.getElementById('rech');
   r.oninput = function () { RECH = r.value; var pos = r.selectionStart; vueAnnuaire(); var n = document.getElementById('rech'); n.focus(); n.setSelectionRange(pos, pos); };
   document.getElementById('ajout').onclick = function () { fichePersonne(null); };
+  document.getElementById('bExport').onclick = fenetreExport;
+  brancherControle();
   zone.querySelectorAll('tr.p').forEach(function (tr) { tr.onclick = function () { fichePersonne(DONNEES.personnes.find(function (p) { return p.id === +tr.getAttribute('data-id'); })); }; });
 }
 /* 04/11 : liste des fonctions (choisie par JFD) ; « Autre » permet de préciser librement */
@@ -311,26 +331,43 @@ function fichePersonne(p) {
     '<div><label>Nom</label><input name="nom" value="' + h(p.nom) + '" required></div>' +
     '<div><label>Fonction</label><select name="fonctionChoix">' + optionsFonction(p.fonction) + '</select>' +
     '<input name="fonctionAutre" value="' + h(FONCTIONS.indexOf(p.fonction) >= 0 ? '' : p.fonction) + '" placeholder="Préciser la fonction (facultatif)" style="margin-top:6px' + (fonctionEstAutre(p.fonction) ? '' : ';display:none') + '"></div>' +
-    '<div><label>Service</label>' + choixServices(p.service) + '</div>' +
+    '<div><label>Deuxième ligne de signature <span class="info">(facultatif)</span></label><input name="ligne2" value="' + h(p.ligne2) + '" maxlength="120" placeholder="sous la qualité"></div>' +
     '<div><label>Courriel</label><input name="courriel" type="email" value="' + h(p.courriel) + '"></div>' +
     '<div><label>Téléphone</label><input name="telephone" value="' + h(p.telephone) + '" placeholder="à défaut, celui du site"></div>' +
     '<div><label>Portable</label><input name="portable" value="' + h(p.portable) + '" placeholder="06 …"></div>' +
     '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
     '<div><label>Initiales</label><input name="initiales" value="' + h(p.initiales) + '" maxlength="10"></div>' +
+    '<div><label>Couleur du nom dans la signature</label><select name="couleur">' + COULEURS.map(function (c) { return '<option value="' + c[0] + '"' + ((p.couleur || COULEURS[0][0]) === c[0] ? ' selected' : '') + '>' + h(c[1]) + '</option>'; }).join('') + '</select></div>' +
     '<div class="large"><label class="case"><input type="checkbox" name="sans_signature"' + (p.sans_signature ? ' checked' : '') + '> Sans signature de courriel <span class="info">(pas de courriel ni de signature : l’alerte de fiche incomplète ne s’affiche pas)</span></label></div>' +
+    '<div class="large" id="blocApercu"><label>Aperçu de la signature <button type="button" class="btn second" id="bCopierSig" style="padding:2px 9px;font-size:12px;margin-left:6px">Copier la signature</button></label><div class="apercu"><div class="zoom" id="apercuSig"></div></div></div>' +
     '</div><p class="erreur" id="ePers"></p><div class="actions">' +
     (n ? '' : '<button type="button" class="btn ' + (p.actif ? 'danger' : 'second') + '" id="bStatut">' + (p.actif ? 'Passer inactif' : 'Réactiver') + '</button>') +
     '<button type="button" class="btn second" id="bAnnuler">Annuler</button><button type="submit" class="btn">Enregistrer</button></div></form></div>';
   f.hidden = false;
   var form = document.getElementById('fPers'), F = form.elements;
   F.prenom.addEventListener('change', function () { if (!F.civilite.value) F.civilite.value = civiliteDe(F.prenom.value); });
-  brancherServices(form);
   F.fonctionChoix.addEventListener('change', function () { F.fonctionAutre.style.display = F.fonctionChoix.value === 'Autre' ? '' : 'none'; if (F.fonctionChoix.value === 'Autre') F.fonctionAutre.focus(); });
   document.getElementById('bAnnuler').onclick = fermer;
+  /* 05/11 : aperçu de la signature, mis à jour pendant la saisie */
+  function brouillon() {
+    var site = DONNEES.sites.find(function (s) { return String(s.id) === F.site_id.value; }) || null;
+    return { categorie: F.categorie.value, prenom: F.prenom.value.trim(), nom: F.nom.value.trim(), ligne2: F.ligne2.value.trim(), couleur: F.couleur.value,
+      fonction: F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value,
+      telephone: F.telephone.value, courriel: F.courriel.value.trim(), site: site, sans_signature: F.sans_signature.checked };
+  }
+  function majApercu() {
+    var b = brouillon(), el = document.getElementById('apercuSig');
+    document.getElementById('blocApercu').style.display = b.sans_signature ? 'none' : '';
+    el.innerHTML = signatureHTML(b, true);
+    var k = Math.min(1, (el.parentNode.clientWidth - 20) / 730);
+    el.style.transform = 'scale(' + k + ')'; el.parentNode.style.height = Math.ceil(el.scrollHeight * k + 20) + 'px';
+  }
+  form.addEventListener('input', majApercu); form.addEventListener('change', majApercu); majApercu();
+  document.getElementById('bCopierSig').onclick = function () { copierSignature(brouillon(), this); };
   form.onsubmit = function (ev) {
     ev.preventDefault();
     var d = {}; ['categorie', 'civilite', 'prenom', 'nom', 'courriel', 'telephone', 'portable', 'site_id', 'initiales'].forEach(function (k) { d[k] = F[k].value; });
-    d.service = lireServices(form);
+    d.ligne2 = F.ligne2.value; d.couleur = F.couleur.value;
     d.sans_signature = F.sans_signature.checked;
     d.telephone = formatTel(d.telephone); d.portable = formatTel(d.portable);
     d.fonction = F.fonctionChoix.value === 'Autre' ? (F.fonctionAutre.value.trim() || 'Autre') : F.fonctionChoix.value;
@@ -506,6 +543,201 @@ function vueJournal() {
     document.getElementById('lJournal').innerHTML = d.lignes.length ? '<div class="tableau"><table><thead><tr><th>Date</th><th>Personne</th><th>Action</th><th>Champs modifiés</th><th>Origine</th></tr></thead><tbody>' +
       d.lignes.map(function (l) { return '<tr><td>' + dateFr(l.le) + '</td><td>' + h(l.personne) + '</td><td>' + h(l.action) + '</td><td>' + h(l.champs || '') + '</td><td>' + h(l.origine) + '</td></tr>'; }).join('') + '</tbody></table></div>' : 'Aucune modification pour l’instant.';
   });
+}
+
+/* ====================================================================
+   05/11/2026 — SIGNATURES, EXPORT, CONTRÔLE DES DOUBLONS
+   ==================================================================== */
+/* couleurs de la charte proposées pour le nom ; défaut = bleu-vert de la signature de JFD */
+var COULEURS = [['#33838B', 'Bleu-vert (par défaut)'], ['#0F2238', 'Bleu nuit'], ['#FF982D', 'Orange'], ['#A01040', 'Carmin']];
+/* qualité affichée sous le nom : « Notaire Associé » pour les associés, « Notaire » (et surtout pas « Notaire salarié ») pour les notaires salariés */
+function qualite(p) {
+  if (p.categorie === 'associe') return 'Notaire Associé';
+  if (p.fonction === 'Notaire salarié') return 'Notaire';
+  return p.fonction && p.fonction !== 'Autre' ? p.fonction : '';
+}
+function casseTitre(t) { return String(t || '').toLowerCase().replace(/(^|[\s\-'’])([a-zà-ÿ])/g, function (m, a, b) { return a + b.toUpperCase(); }); }
+function telSignature(p) { return formatTel(p.telephone || (p.site ? p.site.telephone : '')); }
+function adresseSignature(p) {
+  if (!p.site || !p.site.adresse) return '';
+  return h(p.site.adresse) + ' –&nbsp;' + h([p.site.code_postal, casseTitre(p.site.nom)].filter(Boolean).join(' '));   /* déjà échappée */
+}
+/* manquants d'une signature (pour la page de toutes les signatures et l'aperçu) */
+function manquesSignature(p) {
+  var m = [];
+  if (!p.prenom) m.push('prénom'); if (!qualite(p)) m.push('fonction'); if (!telSignature(p)) m.push('téléphone');
+  if (!p.courriel) m.push('courriel'); if (!p.site) m.push('site'); else if (!p.site.adresse) m.push('adresse du site');
+  return m;
+}
+/* signature générée À L'IDENTIQUE du modèle commun (dépôt connexion, signature/signature-modele.html) ;
+   controle = true : les champs manquants apparaissent surlignés en jaune */
+function signatureHTML(p, controle) {
+  var vide = function (lib) { return controle ? '<span class="vide">' + lib + ' à compléter</span>' : ''; };
+  var seg = "font-family:'Segoe UI',sans-serif;color:#0F2238";
+  var nom = [p.prenom, p.nom].filter(Boolean).join(' ');
+  var q = qualite(p), tel = telSignature(p), adr = adresseSignature(p);
+  var couleur = p.couleur || COULEURS[0][0];
+  var lig = function (contenu, taille, extra) { return '<p style="margin:0 0 0 15px;font-size:' + taille + ';line-height:115%;' + seg + (extra || '') + '">' + contenu + '</p>'; };
+  return '<table border="0" cellspacing="0" cellpadding="0" width="715" style="width:715px;border-collapse:collapse"><tr>' +
+    '<td width="176" valign="top" style="width:176px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p>' +
+    '<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-fidal-notaires.png" width="145" height="72" alt="FIDAL Notaires" style="display:block;width:145px;height:72px;border:0"></p></td>' +
+    '<td width="325" valign="top" style="width:325px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:8pt;' + seg + '">&nbsp;</p>' +
+    '<p style="margin:0 0 4px 15px;font-size:16pt;font-family:Georgia,serif;color:' + couleur + '">' + (nom ? h(nom) : vide('nom')) + '</p>' +
+    lig(q ? h(q) : vide('fonction'), '10pt') +
+    (p.ligne2 ? lig(h(p.ligne2), '10pt') : '') +
+    lig('&nbsp;', '9pt') +
+    lig(tel ? h(tel) : vide('téléphone'), '9pt') +
+    '<p style="margin:0 0 0 15px;font-size:9pt;font-family:\'Segoe UI\',sans-serif">' + (p.courriel ? '<a href="mailto:' + h(p.courriel) + '" style="color:#0563C1;text-decoration:underline">' + h(p.courriel) + '</a>' : vide('courriel')) + '</p>' +
+    lig(adr || vide(p.site ? 'adresse du site' : 'site'), '9pt') +
+    '<p style="margin:0;font-size:8pt;' + seg + '">&nbsp;</p></td>' +
+    '<td width="213" valign="top" style="width:213px;padding:0 7px"><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p>' +
+    '<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-notaires-de-france.png" width="78" height="74" alt="Notaires de France" style="display:block;width:78px;height:74px;border:0"></p></td>' +
+    '</tr></table>' +
+    '<p style="margin:0;font-size:7pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:7pt;' + seg + '">&nbsp;</p>' +
+    '<p style="margin:0;text-align:justify;font-size:8pt;font-family:\'Segoe UI\',sans-serif;color:#000"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S\'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>';
+}
+/* copie au format riche : on dépose le HTML lui-même (styles en ligne, polices nommées) et non la sélection de l'écran,
+   pour éviter les ratés constatés avec le bouton existant */
+function copierSignature(p, bouton) {
+  var html = signatureHTML(p, false);
+  var texteBrut = [[p.prenom, p.nom].filter(Boolean).join(' '), qualite(p), p.ligne2, telSignature(p), p.courriel].filter(Boolean).join('\n');
+  var ok = function () { var t = bouton.textContent; bouton.textContent = 'Copiée ✓'; setTimeout(function () { bouton.textContent = t; }, 1600); };
+  if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+    navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([texteBrut], { type: 'text/plain' }) })]).then(ok, function () { copieSecours(html) && ok(); });
+  } else if (copieSecours(html)) ok();
+}
+function copieSecours(html) {
+  var d = document.createElement('div'); d.contentEditable = 'true'; d.style.cssText = 'position:fixed;left:-9999px;top:0'; d.innerHTML = html;
+  document.body.appendChild(d); var r = document.createRange(); r.selectNodeContents(d); var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  var ok = false; try { ok = document.execCommand('copy'); } catch (e) {} s.removeAllRanges(); d.remove();
+  if (!ok) alert('La copie a échoué : sélectionnez la signature à la main.'); return ok;
+}
+
+/* ---------- page de toutes les signatures : par site, compacte, manquants en jaune ---------- */
+function vueSignatures() {
+  var liste = DONNEES.personnes.filter(function (p) { return p.actif && !p.sans_signature; });
+  var parSite = {};
+  liste.forEach(function (p) { var k = p.site ? p.site.nom : '~Sans site'; (parSite[k] = parSite[k] || []).push(p); });
+  var incompletes = liste.filter(function (p) { return manquesSignature(p).length; }).length;
+  var t = '<div class="carte"><div class="barre" style="margin:0"><h2 style="margin:0;flex:1">Toutes les signatures</h2><button class="btn second" type="button" onclick="window.print()">Imprimer</button></div>' +
+    '<p class="info">' + liste.length + ' signatures, classées par site · ' + (incompletes ? '<span class="vide">' + incompletes + ' incomplète' + (incompletes > 1 ? 's' : '') + '</span> (champs manquants surlignés en jaune)' : 'toutes complètes') + '.</p></div>';
+  Object.keys(parSite).sort(function (a, b) { return a.localeCompare(b, 'fr'); }).forEach(function (k) {
+    var l = parSite[k].sort(function (a, b) { return (a.categorie === b.categorie ? 0 : a.categorie === 'associe' ? -1 : 1) || sansAccent(a.nom + a.prenom).localeCompare(sansAccent(b.nom + b.prenom), 'fr'); });
+    t += '<details class="n1" open><summary>' + h(k === '~Sans site' ? 'Sans site' : casseTitre(k)) + '<small>' + l.length + '</small></summary><div class="sigs" style="padding:0 12px 12px">' +
+      l.map(function (p) { return '<div class="sig"><button class="btn second" type="button" data-copier="' + p.id + '">Copier</button><div class="zoom">' + signatureHTML(p, true) + '</div></div>'; }).join('') + '</div></details>';
+  });
+  zone.innerHTML = t;
+  zone.querySelectorAll('[data-copier]').forEach(function (b) { b.onclick = function () { copierSignature(DONNEES.personnes.find(function (p) { return p.id === +b.getAttribute('data-copier'); }), b); }; });
+}
+
+/* ---------- contrôle automatique des doublons (recalculé à chaque chargement : après chaque enregistrement et après la ronde) ---------- */
+function groupes(liste, cle) {
+  var g = {}; liste.forEach(function (p) { var k = cle(p); if (k) (g[k] = g[k] || []).push(p); });
+  return Object.keys(g).map(function (k) { return g[k]; }).filter(function (x) { return x.length > 1; });
+}
+function controles() {
+  var actifs = DONNEES.personnes.filter(function (p) { return p.actif; });
+  var nomP = function (p) { return [p.prenom, p.nom].filter(Boolean).join(' '); };
+  var courriels = groupes(actifs, function (p) { return (p.courriel || '').toLowerCase(); });
+  var memes = groupes(actifs, function (p) { return p.prenom ? sansAccent(p.prenom + '|' + p.nom) : ''; });
+  var dejaVus = {}; memes.forEach(function (g) { g.forEach(function (p) { dejaVus[p.id] = 1; }); });
+  var homonymes = groupes(actifs, function (p) { return sansAccent(p.nom); })
+    .filter(function (g) { return !g.every(function (p) { return p.homonyme_verifie || dejaVus[p.id]; }); });
+  return { courriels: courriels, memes: memes, homonymes: homonymes, nomP: nomP };
+}
+function encadreControle() {
+  var c = controles(), n = c.courriels.length + c.memes.length + c.homonymes.length;
+  if (!n) return '';
+  var lien = function (p) { return '<a href="#" data-fiche="' + p.id + '">' + h(c.nomP(p)) + '</a>'; };
+  var t = '<div class="carte alerte"><h3>À vérifier : ' + n + ' doublon' + (n > 1 ? 's' : '') + ' possible' + (n > 1 ? 's' : '') + '</h3><ul>';
+  c.courriels.forEach(function (g) { t += '<li><b>Même courriel</b> (' + h(g[0].courriel) + ') : ' + g.map(lien).join(', ') + '</li>'; });
+  c.memes.forEach(function (g) { t += '<li><b>Même prénom et même nom</b> : ' + g.map(lien).join(', ') + '</li>'; });
+  c.homonymes.forEach(function (g) { t += '<li><b>Même nom de famille</b> : ' + g.map(lien).join(', ') + '<button class="btn second" type="button" data-homonymes="' + g.map(function (p) { return p.id; }).join(',') + '">Pas un doublon</button></li>'; });
+  return t + '</ul><p class="info" style="margin:4px 0 0">Cliquez sur un nom pour ouvrir sa fiche. L’encadré disparaît quand tout est corrigé.</p></div>';
+}
+function brancherControle() {
+  zone.querySelectorAll('[data-fiche]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); fichePersonne(DONNEES.personnes.find(function (p) { return p.id === +a.getAttribute('data-fiche'); })); }; });
+  zone.querySelectorAll('[data-homonymes]').forEach(function (b) { b.onclick = function () {
+    b.disabled = true;
+    api('homonyme_ok', { ids: b.getAttribute('data-homonymes').split(',') }).then(charger).catch(function (err) { b.disabled = false; alert(err.message); });
+  }; });
+}
+
+/* ---------- export de l'annuaire : cases d'ensemble, puis rectification personne par personne ---------- */
+function fenetreExport() {
+  var actifs = DONNEES.personnes.filter(function (p) { return p.actif; }).sort(function (a, b) { return sansAccent(a.nom + a.prenom).localeCompare(sansAccent(b.nom + b.prenom), 'fr'); });
+  var connus = SOUS_GROUPES.map(function (g) { return g[0]; });
+  var ENS = [['a', 'Notaires associés', function (p) { return p.categorie === 'associe'; }], ['c', 'Tous les collaborateurs', function (p) { return p.categorie !== 'associe'; }]]
+    .concat(SOUS_GROUPES.map(function (g) { return ['f' + g[0], g[1], function (p) { return p.categorie !== 'associe' && p.fonction === g[0]; }]; }))
+    .concat([['fx', 'Autres collaborateurs', function (p) { return p.categorie !== 'associe' && connus.indexOf(p.fonction) < 0; }]])
+    .filter(function (e) { return actifs.some(e[2]); });
+  var SITES = DONNEES.sites.map(function (s) { return ['s' + s.id, casseTitre(s.nom), function (p) { return p.site_id === s.id; }]; }).filter(function (e) { return actifs.some(e[2]); });
+  var caseEns = function (e) { return '<label class="case"><input type="checkbox" data-ens="' + h(e[0]) + '"> ' + h(e[1]) + '</label>'; };
+  var f = document.getElementById('fenetre');
+  f.innerHTML = '<div class="carte" style="max-width:760px"><h2>Exporter l’annuaire</h2>' +
+    '<label>Par catégorie ou fonction</label><div class="ens">' + ENS.map(caseEns).join('') + '</div>' +
+    '<label style="margin-top:10px">Par site</label><div class="ens">' + SITES.map(caseEns).join('') + '</div>' +
+    '<label style="margin-top:12px">Personnes retenues <span id="nbExport" class="info"></span> <a href="#" id="toutDecocher" style="margin-left:8px">tout décocher</a></label>' +
+    '<div class="choix-pers">' + actifs.map(function (p) { return '<label class="case"><input type="checkbox" data-pers="' + p.id + '"> ' + h(p.nom + ' ' + (p.prenom || '')) + ' <span class="info">' + h(p.site ? casseTitre(p.site.nom) : '') + '</span></label>'; }).join('') + '</div>' +
+    '<div class="actions"><button type="button" class="btn second" id="bAnnulerExp">Annuler</button><button type="button" class="btn" id="bPdf">PDF</button><button type="button" class="btn" id="bXlsx">Excel</button></div></div>';
+  f.hidden = false;
+  var tous = ENS.concat(SITES), cases = f.querySelectorAll('[data-pers]');
+  var personne = function (id) { return actifs.find(function (p) { return p.id === +id; }); };
+  var retenus = function () { return Array.prototype.filter.call(cases, function (c) { return c.checked; }).map(function (c) { return personne(c.getAttribute('data-pers')); }); };
+  function majEtat() {
+    var sel = retenus(), ids = {}; sel.forEach(function (p) { ids[p.id] = 1; });
+    f.querySelectorAll('[data-ens]').forEach(function (c) {
+      var e = tous.find(function (x) { return x[0] === c.getAttribute('data-ens'); }), m = actifs.filter(e[2]), n = m.filter(function (p) { return ids[p.id]; }).length;
+      c.checked = n === m.length; c.indeterminate = n > 0 && n < m.length;
+    });
+    document.getElementById('nbExport').textContent = '(' + sel.length + ')';
+    document.getElementById('bPdf').disabled = document.getElementById('bXlsx').disabled = !sel.length;
+  }
+  f.querySelectorAll('[data-ens]').forEach(function (c) { c.onchange = function () {
+    var e = tous.find(function (x) { return x[0] === c.getAttribute('data-ens'); }), m = {}; actifs.filter(e[2]).forEach(function (p) { m[p.id] = 1; });
+    cases.forEach(function (x) { if (m[x.getAttribute('data-pers')]) x.checked = c.checked; }); majEtat();
+  }; });
+  cases.forEach(function (x) { x.onchange = majEtat; });
+  document.getElementById('toutDecocher').onclick = function (e) { e.preventDefault(); cases.forEach(function (x) { x.checked = false; }); majEtat(); };
+  document.getElementById('bAnnulerExp').onclick = fermer;
+  document.getElementById('bXlsx').onclick = function () { exporterExcel(retenus()); };
+  document.getElementById('bPdf').onclick = function () { exporterPdf(retenus()); };
+  majEtat();
+}
+function lignesExport(liste) {
+  return liste.slice().sort(function (a, b) {
+    return sansAccent(a.site ? a.site.nom : '~').localeCompare(sansAccent(b.site ? b.site.nom : '~'), 'fr') || (a.categorie === b.categorie ? 0 : a.categorie === 'associe' ? -1 : 1) || sansAccent(a.nom + a.prenom).localeCompare(sansAccent(b.nom + b.prenom), 'fr');
+  });
+}
+function dateFichier() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function exporterExcel(liste) {
+  var lignes = [['Site', 'Civilité', 'Prénom', 'Nom', 'Initiales', 'Fonction', 'Courriel', 'Téléphone', 'Portable']].concat(lignesExport(liste).map(function (p) {
+    return [p.site ? casseTitre(p.site.nom) : '', p.civilite, p.prenom, p.nom, p.initiales, [qualite(p), p.ligne2].filter(Boolean).join(' — '), p.courriel, telSignature(p), formatTel(p.portable)];
+  }));
+  var ws = XLSX.utils.aoa_to_sheet(lignes);
+  ws['!cols'] = [14, 10, 16, 20, 9, 30, 34, 16, 16].map(function (w) { return { wch: w }; });
+  var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Annuaire');
+  XLSX.writeFile(wb, 'CARNET-annuaire-' + dateFichier() + '.xlsx');
+}
+function exporterPdf(liste) {
+  var parSite = {}, ordre = [];
+  lignesExport(liste).forEach(function (p) { var k = p.site ? casseTitre(p.site.nom) : 'Sans site'; if (!parSite[k]) { parSite[k] = []; ordre.push(k); } parSite[k].push(p); });
+  var corps = ordre.map(function (k) {
+    return '<h2>' + h(k) + ' <small>' + parSite[k].length + '</small></h2><table><thead><tr><th>Nom</th><th>Fonction</th><th>Courriel</th><th>Téléphone</th><th>Portable</th></tr></thead><tbody>' +
+      parSite[k].map(function (p) { return '<tr><td><b>' + h(p.nom) + '</b> ' + h(p.prenom) + (p.initiales ? ' <span>(' + h(p.initiales) + ')</span>' : '') + '</td><td>' + h([qualite(p), p.ligne2].filter(Boolean).join(' — ')) + '</td><td>' + h(p.courriel) + '</td><td>' + h(telSignature(p)) + '</td><td>' + h(formatTel(p.portable)) + '</td></tr>'; }).join('') + '</tbody></table>';
+  }).join('');
+  var w = window.open('', '_blank');
+  if (!w) { alert('La fenêtre d’impression a été bloquée par le navigateur : autorisez les fenêtres pour CARNET.'); return; }
+  w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Annuaire FIDAL Notaires — ' + dateFichier() + '</title><style>' +
+    '@page{size:A4 landscape;margin:12mm}body{font-family:"Segoe UI",sans-serif;font-size:10pt;color:#0F2238;margin:0}' +
+    'header{border-bottom:3px solid #33838B;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-end}' +
+    'header h1{font-family:Georgia,serif;font-weight:normal;font-size:20pt;margin:0}header span{color:#5E6875;font-size:9pt}' +
+    'h2{font-family:Georgia,serif;font-weight:normal;color:#33838B;font-size:13pt;margin:14px 0 4px;break-after:avoid}h2 small{color:#5E6875;font-size:9pt;font-family:"Segoe UI",sans-serif}' +
+    'table{width:100%;border-collapse:collapse}th{text-align:left;font-size:8.5pt;color:#5E6875;border-bottom:1px solid #0F2238;padding:3px 5px}' +
+    'td{padding:3px 5px;border-bottom:1px solid #DDE1E7;vertical-align:top}td span{color:#5E6875}tr{break-inside:avoid}' +
+    '</style></head><body><header><h1>Annuaire · FIDAL Notaires</h1><span>' + liste.length + ' personnes · établi le ' + new Date().toLocaleDateString('fr-FR') + '</span></header>' + corps +
+    '<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
+  w.document.close();
 }
 
 demarrer();
