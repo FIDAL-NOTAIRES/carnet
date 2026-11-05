@@ -549,9 +549,9 @@ function vueJournal() {
    05/11/2026 — SIGNATURES, EXPORT, CONTRÔLE DES DOUBLONS
    ==================================================================== */
 /* couleurs de la charte proposées pour le nom ; défaut = bleu-vert de la signature de JFD */
-/* 05/11 soir : charte officielle (guide L. HANNETEL, thème FIDAL Notaires) — seules les couleurs lisibles en texte sur fond blanc ;
-   orange (non conforme pour du texte) et carmin (hors charte) retirés */
-var COULEURS = [['#33838B', 'Bleu canard (par défaut)'], ['#0F2238', 'Bleu nuit'], ['#657D96', 'Bleu gris']];
+/* 05/11 soir (vocal) : toutes les couleurs de la charte officielle sauf le jaune ; carmin retiré (hors charte) ;
+   une couleur qui n'est plus dans la liste retombe sur le bleu canard */
+var COULEURS = [['#33838B', 'Bleu canard (par défaut)'], ['#0F2238', 'Bleu nuit'], ['#657D96', 'Bleu gris'], ['#E3CC7A', 'Ocre'], ['#82AA98', 'Vert amande'], ['#FF982D', 'Orange'], ['#6DD5DC', 'Cyan']];
 function couleurNom(c) { return COULEURS.some(function (x) { return x[0] === c; }) ? c : COULEURS[0][0]; }
 /* qualité affichée sous le nom : « Notaire Associé » pour les associés, « Notaire » (et surtout pas « Notaire salarié ») pour les notaires salariés */
 function qualite(p) {
