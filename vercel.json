@@ -1,4 +1,10 @@
 {
+  "functions": {
+    "api/carnet.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/carnet?action=ronde", "schedule": "0 22 * * 0" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
