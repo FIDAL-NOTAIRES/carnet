@@ -1,5 +1,5 @@
 // ============================================================
-// CARNET — api/carnet.js — lot 1 (04/11/2026)
+// CARNET — api/carnet.js — lot 1 (04/11/2026) ; signatures, export, contrôle des doublons (05/11/2026)
 // Annuaire commun des associés et collaborateurs de FIDAL Notaires.
 // Fonction serveur UNIQUE à actions (limite Vercel Hobby : 12 fonctions).
 //
@@ -20,9 +20,11 @@ const crypto = require("crypto");
 const { ronde } = require("../lib/ronde");
 
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000;
-const CHAMPS_CHIFFRES = ["fonction", "service", "telephone", "portable", "courriel"];
+const CHAMPS_CHIFFRES = ["fonction", "service", "ligne2", "telephone", "portable", "courriel"];
+// 05/11 : couleurs de la charte proposées pour le nom dans la signature (défaut = bleu-vert du modèle de JFD)
+const COULEURS = ["#33838B", "#0F2238", "#FF982D", "#A01040"];
 const LIBELLES = { nom: "nom", prenom: "prénom", civilite: "civilité", categorie: "catégorie", initiales: "initiales", site_id: "site",
-  fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel", sans_signature: "sans signature" };
+  fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel", sans_signature: "sans signature", ligne2: "deuxième ligne de signature", couleur: "couleur du nom" };
 
 // ---------- utilitaires ----------
 const sha256 = (t) => crypto.createHash("sha256").update(String(t), "utf8").digest();
@@ -84,6 +86,7 @@ async function personnes(sql, avecInactifs) {
   return lignes.map((p) => ({
     id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, initiales: p.initiales || "", sans_signature: !!p.sans_signature,
     actif: p.actif, inactif_le: p.inactif_le, maj_le: p.maj_le,
+    ligne2: dechiffrer(p.ligne2_c), couleur: p.couleur || COULEURS[0], homonyme_verifie: !!p.homonyme_verifie,
     fonction: dechiffrer(p.fonction_c), service: dechiffrer(p.service_c), telephone: dechiffrer(p.telephone_c), portable: dechiffrer(p.portable_c), courriel: dechiffrer(p.courriel_c),
     site_id: p.site_id, site: p.site_id ? { nom: p.site_nom, code_postal: p.site_cp || "", adresse: p.site_adresse || "", telephone: p.site_tel || "" } : null,
   }));
@@ -102,7 +105,7 @@ function valider(c) {
     categorie: c.categorie === "associe" ? "associe" : "collaborateur",
     initiales: texte(c.initiales, 10).toUpperCase() || null,
     site_id: Number.isFinite(parseInt(c.site_id, 10)) ? parseInt(c.site_id, 10) : null,
-    fonction: texte(c.fonction, 120), service: texte(c.service, 160), telephone: texte(c.telephone, 40), portable: texte(c.portable, 40), sans_signature: c.sans_signature === true || c.sans_signature === "true", courriel: texte(c.courriel, 200).toLowerCase(),
+    fonction: texte(c.fonction, 120), service: texte(c.service, 160), telephone: texte(c.telephone, 40), portable: texte(c.portable, 40), sans_signature: c.sans_signature === true || c.sans_signature === "true", ligne2: texte(c.ligne2, 120), couleur: COULEURS.includes(c.couleur) ? c.couleur : COULEURS[0], courriel: texte(c.courriel, 200).toLowerCase(),
   };
   if (!p.nom) throw new Error("Le nom est obligatoire.");
   if (p.courriel && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.courriel)) throw new Error("Courriel invalide : " + p.courriel);
@@ -127,22 +130,32 @@ const actions = {
       if (autre.length) throw new Error(`Ce courriel est déjà celui de ${nomComplet(autre[0])}.`);
     }
     if (!Number.isFinite(id)) {
-      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, sans_signature, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
+      const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, sans_signature, fonction_c, service_c, ligne2_c, couleur, telephone_c, portable_c, courriel_c, courriel_empreinte)
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
-                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
+                ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.ligne2)}, ${p.couleur}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null);
       return { ok: true, id: r[0].id };
     }
     const avant = (await personnes(sql, true)).find((x) => x.id === id);
     if (!avant) throw new Error("Personne introuvable.");
+    if (c.service === undefined) p.service = avant.service;   // 05/11 : le champ « service » n'est plus saisi à l'écran, sa valeur est gardée
     const modifies = Object.keys(LIBELLES).filter((k) => String(avant[k] == null ? "" : avant[k]) !== String(p[k] == null ? "" : p[k]));
     if (!modifies.length) return { ok: true, id, inchange: true };
     await sql`UPDATE carnet_personne SET nom = ${p.nom}, prenom = ${p.prenom}, civilite = ${p.civilite}, categorie = ${p.categorie},
-              initiales = ${p.initiales}, site_id = ${p.site_id}, sans_signature = ${p.sans_signature}, fonction_c = ${chiffrer(p.fonction)}, service_c = ${chiffrer(p.service)},
+              initiales = ${p.initiales}, site_id = ${p.site_id}, sans_signature = ${p.sans_signature}, fonction_c = ${chiffrer(p.fonction)}, service_c = ${chiffrer(p.service)}, ligne2_c = ${chiffrer(p.ligne2)}, couleur = ${p.couleur},
               telephone_c = ${chiffrer(p.telephone)}, portable_c = ${chiffrer(p.portable)}, courriel_c = ${chiffrer(p.courriel)}, courriel_empreinte = ${emp}, maj_le = NOW()
               WHERE id = ${id}`;
     await journaliser(sql, id, nomComplet(p), "correction", modifies.map((k) => LIBELLES[k]).join(", "));
     return { ok: true, id };
+  },
+
+  // 05/11 : contrôle des doublons — « ce n'est pas un doublon » : les personnes désignées sortent de l'encadré des homonymes
+  async homonyme_ok(sql, c) {
+    const ids = (Array.isArray(c.ids) ? c.ids : []).map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    if (ids.length < 2) throw new Error("Il faut au moins deux personnes.");
+    const r = await sql`UPDATE carnet_personne SET homonyme_verifie = TRUE WHERE id = ANY(${ids}) RETURNING id, prenom, nom`;
+    for (const x of r) await journaliser(sql, x.id, nomComplet(x), "homonyme vérifié (pas un doublon)", null);
+    return { ok: true };
   },
 
   async statut(sql, c) {
