@@ -337,7 +337,7 @@ function fichePersonne(p) {
     '<div><label>Portable</label><input name="portable" value="' + h(p.portable) + '" placeholder="06 …"></div>' +
     '<div><label>Site de rattachement</label><select name="site_id">' + optionsSites(p.site_id) + '</select></div>' +
     '<div><label>Initiales</label><input name="initiales" value="' + h(p.initiales) + '" maxlength="10"></div>' +
-    '<div><label>Couleur du nom dans la signature</label><select name="couleur">' + COULEURS.map(function (c) { return '<option value="' + c[0] + '"' + ((p.couleur || COULEURS[0][0]) === c[0] ? ' selected' : '') + '>' + h(c[1]) + '</option>'; }).join('') + '</select></div>' +
+    '<div><label>Couleur du nom dans la signature</label><select name="couleur">' + COULEURS.map(function (c) { return '<option value="' + c[0] + '"' + (couleurNom(p.couleur) === c[0] ? ' selected' : '') + '>' + h(c[1]) + '</option>'; }).join('') + '</select></div>' +
     '<div class="large"><label class="case"><input type="checkbox" name="sans_signature"' + (p.sans_signature ? ' checked' : '') + '> Sans signature de courriel <span class="info">(pas de courriel ni de signature : l’alerte de fiche incomplète ne s’affiche pas)</span></label></div>' +
     '<div class="large" id="blocApercu"><label>Aperçu de la signature <button type="button" class="btn second" id="bCopierSig" style="padding:2px 9px;font-size:12px;margin-left:6px">Copier la signature</button></label><div class="apercu"><div class="zoom" id="apercuSig"></div></div></div>' +
     '</div><p class="erreur" id="ePers"></p><div class="actions">' +
@@ -549,7 +549,10 @@ function vueJournal() {
    05/11/2026 — SIGNATURES, EXPORT, CONTRÔLE DES DOUBLONS
    ==================================================================== */
 /* couleurs de la charte proposées pour le nom ; défaut = bleu-vert de la signature de JFD */
-var COULEURS = [['#33838B', 'Bleu-vert (par défaut)'], ['#0F2238', 'Bleu nuit'], ['#FF982D', 'Orange'], ['#A01040', 'Carmin']];
+/* 05/11 soir : charte officielle (guide L. HANNETEL, thème FIDAL Notaires) — seules les couleurs lisibles en texte sur fond blanc ;
+   orange (non conforme pour du texte) et carmin (hors charte) retirés */
+var COULEURS = [['#33838B', 'Bleu canard (par défaut)'], ['#0F2238', 'Bleu nuit'], ['#657D96', 'Bleu gris']];
+function couleurNom(c) { return COULEURS.some(function (x) { return x[0] === c; }) ? c : COULEURS[0][0]; }
 /* qualité affichée sous le nom : « Notaire Associé » pour les associés, « Notaire » (et surtout pas « Notaire salarié ») pour les notaires salariés */
 function qualite(p) {
   if (p.categorie === 'associe') return 'Notaire Associé';
@@ -576,25 +579,25 @@ function signatureHTML(p, controle) {
   var seg = "font-family:'Segoe UI',sans-serif;color:#0F2238";
   var nom = [p.prenom, p.nom].filter(Boolean).join(' ');
   var q = qualite(p), tel = telSignature(p), adr = adresseSignature(p);
-  var couleur = p.couleur || COULEURS[0][0];
+  var couleur = couleurNom(p.couleur);
   var lig = function (contenu, taille, extra) { return '<p style="margin:0 0 0 15px;font-size:' + taille + ';line-height:115%;' + seg + (extra || '') + '">' + contenu + '</p>'; };
   return '<table border="0" cellspacing="0" cellpadding="0" width="715" style="width:715px;border-collapse:collapse"><tr>' +
-    '<td width="176" valign="top" style="width:176px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p>' +
+    '<td width="176" valign="middle" style="width:176px;border-right:1px solid #0F2238;padding:0 7px;vertical-align:middle">' +
     '<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-fidal-notaires.png" width="145" height="72" alt="FIDAL Notaires" style="display:block;width:145px;height:72px;border:0"></p></td>' +
-    '<td width="325" valign="top" style="width:325px;border-right:1px solid #000;padding:0 7px"><p style="margin:0;font-size:8pt;' + seg + '">&nbsp;</p>' +
+    '<td width="325" valign="middle" style="width:325px;border-right:1px solid #0F2238;padding:0 7px;vertical-align:middle"><p style="margin:0;font-size:8pt;' + seg + '">&nbsp;</p>' +
     '<p style="margin:0 0 4px 15px;font-size:16pt;font-family:Georgia,serif;color:' + couleur + '">' + (nom ? h(nom) : vide('nom')) + '</p>' +
     lig(q ? h(q) : vide('fonction'), '10pt') +
     (p.ligne2 ? lig(h(p.ligne2), '10pt') : '') +
     lig('&nbsp;', '9pt') +
     lig(tel ? h(tel) : vide('téléphone'), '9pt') +
-    '<p style="margin:0 0 0 15px;font-size:9pt;font-family:\'Segoe UI\',sans-serif">' + (p.courriel ? '<a href="mailto:' + h(p.courriel) + '" style="color:#0563C1;text-decoration:underline">' + h(p.courriel) + '</a>' : vide('courriel')) + '</p>' +
+    '<p style="margin:0 0 0 15px;font-size:9pt;font-family:\'Segoe UI\',sans-serif">' + (p.courriel ? '<a href="mailto:' + h(p.courriel) + '" style="color:#33838B;text-decoration:underline">' + h(p.courriel) + '</a>' : vide('courriel')) + '</p>' +
     lig(adr || vide(p.site ? 'adresse du site' : 'site'), '9pt') +
     '<p style="margin:0;font-size:8pt;' + seg + '">&nbsp;</p></td>' +
-    '<td width="213" valign="top" style="width:213px;padding:0 7px"><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:9pt;' + seg + '">&nbsp;</p>' +
+    '<td width="213" valign="middle" style="width:213px;padding:0 7px;vertical-align:middle">' +
     '<p style="margin:0"><img src="https://connexion-omega.vercel.app/signature/logo-notaires-de-france.png" width="78" height="74" alt="Notaires de France" style="display:block;width:78px;height:74px;border:0"></p></td>' +
     '</tr></table>' +
     '<p style="margin:0;font-size:7pt;' + seg + '">&nbsp;</p><p style="margin:0;font-size:7pt;' + seg + '">&nbsp;</p>' +
-    '<p style="margin:0;text-align:justify;font-size:8pt;font-family:\'Segoe UI\',sans-serif;color:#000"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S\'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>';
+    '<p style="margin:0;text-align:justify;font-size:8pt;font-family:\'Segoe UI\',sans-serif;color:#1A1A1A"><b>Confidentiel&nbsp;: </b>Cet e-mail et ses pièces jointes contiennent des informations confidentielles protégées par le secret professionnel. S\'il ne vous est pas destiné, nous vous remercions de le détruire immédiatement, sans le copier ni révéler ou transmettre son contenu à quiconque.</p>';
 }
 /* copie au format riche : on dépose le HTML lui-même (styles en ligne, polices nommées) et non la sélection de l'écran,
    pour éviter les ratés constatés avec le bouton existant */
