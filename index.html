@@ -86,6 +86,7 @@ table.annuaire .manque{white-space:normal}
     <button type="button" data-vue="sites">Sites</button>
     <button type="button" data-vue="import">Import initial</button>
     <button type="button" data-vue="cles">Clés des outils</button>
+    <button type="button" data-vue="ronde">Ronde Drive</button>
     <button type="button" data-vue="journal">Journal</button>
     <button type="button" id="deconnexion">Se déconnecter</button>
   </nav>
@@ -163,7 +164,7 @@ document.getElementById('menu').addEventListener('click', function (e) {
   afficher();
 });
 function charger() { return api('liste').then(function (d) { DONNEES = d; afficher(); }).catch(function (err) { if (err.message !== 'session') alert(err.message); }); }
-function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImport, cles: vueCles, journal: vueJournal })[VUE](); }
+function afficher() { ({ annuaire: vueAnnuaire, sites: vueSites, import: vueImport, cles: vueCles, ronde: vueRonde, journal: vueJournal })[VUE](); }
 
 /* ---------- annuaire : 1er niveau actifs / inactifs, 2e niveau associés / collaborateurs ---------- */
 var RECH = '';
@@ -471,6 +472,31 @@ function listeCles() {
         (c.revoquee_le ? 'révoquée le ' + dateFr(c.revoquee_le) : '<button class="btn danger" data-rev="' + c.id + '">Révoquer</button>') + '</td></tr>'; }).join('') + '</tbody></table>' : 'Aucune clé pour l’instant.';
     document.querySelectorAll('[data-rev]').forEach(function (b) { b.onclick = function () { if (confirm('Révoquer cette clé ? L’outil ne pourra plus lire CARNET tant qu’il n’aura pas reçu une nouvelle clé.')) api('cle_revoquer', { id: b.getAttribute('data-rev') }).then(listeCles); }; });
   });
+}
+
+/* ---------- ronde avec le Drive (04/11) : automatique le dimanche à 23 h ; ici, simulation ou lancement à la main ---------- */
+function vueRonde() {
+  zone.innerHTML = '<div class="carte"><h2>Ronde avec le Drive</h2>' +
+    '<p class="info">Chaque dimanche à 23 h, CARNET relit « Liste associés » et « Liste_collaborateurs.xlsx » : une personne présente dans un fichier mais absente de CARNET y est créée, puis les deux fichiers sont réécrits à partir de CARNET (actifs seulement). CARNET l’emporte ; aucune alerte, le compte rendu va au journal. Le Drive garde l’historique des versions de chaque fichier.</p>' +
+    '<div class="actions" style="justify-content:flex-start"><button class="btn second" id="bSimuler">Simuler (rien n’est écrit)</button><button class="btn" id="bLancer">Lancer la ronde maintenant</button></div>' +
+    '<div id="rRonde"></div></div>';
+  function lancer(simulation) {
+    var el = document.getElementById('rRonde'); el.innerHTML = '<p class="info">Ronde en cours… (jusqu’à une minute)</p>';
+    document.getElementById('bSimuler').disabled = document.getElementById('bLancer').disabled = true;
+    api('ronde', { simulation: simulation }).then(function (d) {
+      var b = d.bilan, liste = function (t) { return t.length ? '<ul>' + t.map(function (x) { return '<li>' + h(x) + '</li>'; }).join('') + '</ul>' : ' aucune.'; };
+      el.innerHTML = '<h3 style="margin-top:18px">' + (b.simulation ? 'Simulation — rien n’a été écrit' : 'Ronde effectuée') + '</h3>' +
+        '<p>Personnes du Drive absentes de CARNET' + (b.simulation ? ', qui seraient créées :' : ', créées :') + liste(b.nouveaux) + '</p>' +
+        (b.ecartes && b.ecartes.length ? '<p>Écartées :' + liste(b.ecartes) + '</p>' : '') +
+        '<p>' + (b.simulation ? 'Seraient écrits' : 'Écrits') + ' : <b>' + b.associes_ecrits + '</b> associés dans « Liste associés », <b>' + b.collaborateurs_ecrits + '</b> lignes dans « Liste_collaborateurs.xlsx ».</p>' +
+        '<p>Personnes ' + (b.simulation ? 'qui seraient retirées' : 'retirées') + ' des fichiers (inactives ou absentes de CARNET) :' + liste(b.retires) + '</p>' +
+        '<p class="info">Compte utilisé : ' + h(b.compte) + '</p>';
+      if (!b.simulation) charger();
+    }).catch(function (err) { el.innerHTML = '<p class="erreur">' + h(err.message) + '</p>'; })
+      .then(function () { var s = document.getElementById('bSimuler'), l = document.getElementById('bLancer'); if (s) s.disabled = false; if (l) l.disabled = false; });
+  }
+  document.getElementById('bSimuler').onclick = function () { lancer(true); };
+  document.getElementById('bLancer').onclick = function () { if (confirm('Lancer la ronde ? Les deux fichiers du Drive seront réécrits à partir de CARNET.')) lancer(false); };
 }
 
 /* ---------- journal ---------- */
