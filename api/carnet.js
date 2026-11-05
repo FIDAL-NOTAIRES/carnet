@@ -22,7 +22,7 @@ const { ronde } = require("../lib/ronde");
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000;
 const CHAMPS_CHIFFRES = ["fonction", "service", "ligne2", "telephone", "portable", "courriel"];
 // 05/11 : couleurs de la charte proposées pour le nom dans la signature (défaut = bleu-vert du modèle de JFD)
-const COULEURS = ["#33838B", "#0F2238", "#FF982D", "#A01040"];
+const COULEURS = ["#33838B", "#0F2238", "#657D96"];   // charte officielle, couleurs lisibles en texte sur fond blanc
 const LIBELLES = { nom: "nom", prenom: "prénom", civilite: "civilité", categorie: "catégorie", initiales: "initiales", site_id: "site",
   fonction: "fonction", service: "service", telephone: "téléphone", portable: "portable", courriel: "courriel", sans_signature: "sans signature", ligne2: "deuxième ligne de signature", couleur: "couleur du nom" };
 
