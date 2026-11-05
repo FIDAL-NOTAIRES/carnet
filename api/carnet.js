@@ -17,6 +17,7 @@
 
 const { neon } = require("@neondatabase/serverless");
 const crypto = require("crypto");
+const { ronde } = require("../lib/ronde");
 
 const DUREE_SESSION_MS = 8 * 60 * 60 * 1000;
 const CHAMPS_CHIFFRES = ["fonction", "service", "telephone", "portable", "courriel"];
@@ -196,10 +197,15 @@ const actions = {
       const r = await sql`INSERT INTO carnet_personne (nom, prenom, civilite, categorie, initiales, site_id, sans_signature, fonction_c, service_c, telephone_c, portable_c, courriel_c, courriel_empreinte)
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
                 ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
-      await journaliser(sql, r[0].id, nomComplet(p), "création", null, "import");
+      await journaliser(sql, r[0].id, nomComplet(p), "création", null, c.origine === "ronde" ? "ronde" : "import");
       crees++;
     }
     return { ok: true, crees, ecartes };
+  },
+
+  // ronde avec le Drive lancée à la main depuis l'écran (simulation possible : rien n'est écrit)
+  async ronde(sql, c) {
+    return { ok: true, bilan: await ronde({ sql, personnes, journaliser, importer: actions.importer }, { simulation: !!c.simulation, origine: "ronde" }) };
   },
 
   async journal(sql) {
@@ -246,6 +252,21 @@ module.exports = async (req, res) => {
       if (!r.length) { await new Promise((x) => setTimeout(x, 500)); return fin(401, { erreur: "Clé d'accès refusée." }); }
       return fin(200, { personnes: await personnes(sql, q.inactifs === "1") });
     } catch (e) { console.error("[carnet] lecture", e); return fin(500, { erreur: "Erreur serveur" }); }
+  }
+
+  // ----- ronde hebdomadaire automatique (tâche planifiée Vercel, dimanche soir) -----
+  if (req.method === "GET" && q.action === "ronde") {
+    const attendu = process.env.CRON_SECRET ? "Bearer " + process.env.CRON_SECRET : "";
+    if (!attendu || String(req.headers["authorization"] || "") !== attendu) return fin(401, { erreur: "Non autorisé" });
+    if (manque.length || !cleOk) return fin(503, { erreur: "CARNET n'est pas configuré." });
+    const sql = neon(process.env.DATABASE_URL);
+    try {
+      return fin(200, { ok: true, bilan: await ronde({ sql, personnes, journaliser, importer: actions.importer }, { origine: "ronde" }) });
+    } catch (e) {
+      console.error("[carnet] ronde", e);
+      try { await journaliser(sql, null, "Drive", "ronde hebdomadaire EN ÉCHEC", String(e.message || e).slice(0, 300), "ronde"); } catch {}
+      return fin(500, { erreur: e.message || "Erreur serveur" });
+    }
   }
 
   if (req.method !== "POST") return fin(405, { erreur: "Méthode non autorisée" });
