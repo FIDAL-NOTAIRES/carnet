@@ -94,8 +94,10 @@ const attendre = (ms) => new Promise((x) => setTimeout(x, ms));
 // 19/11/2026 : les droits d'une personne se déduisent de ses profils allumés.
 //   outil ouvert (1) = outil « libre » (ouvert à tous) OU présent dans un profil allumé OU profil « tous » (admin général) allumé ;
 //   niveau 2 = lecture payante, si la colonne « version payante » est allumée et que l'outil en a une (FUSION, MONETA).
+//   19/11/2026 (soir) : l'admin général emporte tout, version payante comprise.
 function calculerAcces(profils, payante, outils) {
   const tous = profils.some((p) => p.tous);
+  if (tous) payante = true;
   const ouverts = new Set();
   for (const p of profils) for (const id of (typeof p.outils === "string" ? JSON.parse(p.outils) : (p.outils || []))) ouverts.add(id);
   const acces = {};
@@ -167,7 +169,7 @@ const actionsPersonnes = {
     if (nouveau.length < MDP_LONGUEUR_MIN) throw new Refus(400, `Le nouveau mot de passe doit compter au moins ${MDP_LONGUEUR_MIN} caractères.`);
     if (nouveau.length > 200) throw new Refus(400, "Le nouveau mot de passe est trop long.");
     if (nouveau === ancien) throw new Refus(400, "Le nouveau mot de passe doit être différent de l'ancien.");
-    if (sansAccents(nouveau).includes(r[0].identifiant)) throw new Refus(400, "Le mot de passe ne doit pas contenir votre identifiant.");
+    if (r[0].identifiant.length >= 4 && sansAccents(nouveau).includes(r[0].identifiant)) throw new Refus(400, "Le mot de passe ne doit pas contenir votre identifiant.");
     const sel = crypto.randomBytes(16).toString("base64url");
     await sql`UPDATE carnet_compte SET sel = ${sel}, empreinte = ${hacherMdp(nouveau, sel)}, provisoire = FALSE, expire_le = NULL,
               mdp_le = NOW(), demande_le = NULL, echecs = 0, bloque_jusqua = NULL WHERE personne_id = ${j.id}`;
