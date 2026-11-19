@@ -1,5 +1,7 @@
 // ============================================================
-// CARNET — api/carnet.js — lot 1 (04/11/2026) ; signatures, export, contrôle des doublons (05/11/2026)
+// CARNET — api/carnet.js — lot 1 (04/11/2026) ; signatures, export, contrôle des doublons (05/11/2026) ;
+//   lot 3 (16/11/2026) : comptes des personnes et accès aux outils ; refondu le 19/11/2026 : PROFILS à interrupteurs
+//   (Immobilier, Famille, Affaires, International, Premium, Admin général) + colonne « version payante »
 // Annuaire commun des associés et collaborateurs de FIDAL Notaires.
 // Fonction serveur UNIQUE à actions (limite Vercel Hobby : 12 fonctions).
 //
@@ -7,12 +9,15 @@
 //   En-tête Authorization: Bearer <jeton> (sauf actions "etat" et "connexion")
 // Appel des autres outils (lecture seule, de serveur à serveur) :
 //   GET /api/carnet?action=lecture[&inactifs=1]   en-tête  X-Carnet-Cle: <clé de l'outil>
+// Appel des personnes (page d'accueil et outils, depuis le navigateur, origines autorisées seulement) :
+//   POST /api/carnet { action: "p_connexion" | "p_changer" | "p_moi" | "p_oubli", ... }
 //
 // Variables d'environnement Vercel :
 //   DATABASE_URL            chaîne Neon (rôle matrice_owner, projet neon-fuchsia-pillow)
 //   CARNET_MDP              mot de passe de l'administrateur (JFD seul)
 //   CARNET_CLE_CHIFFREMENT  clé AES-256 en base64 (32 octets) — copie de secours sur clé physique
 //   CARNET_SECRET           (facultatif) secret de signature des sessions ; à défaut, dérivé du mot de passe
+//   CARNET_ORIGINES         (facultatif) origines supplémentaires autorisées à connecter les personnes, séparées par des virgules
 // ============================================================
 
 const { neon } = require("@neondatabase/serverless");
@@ -46,6 +51,149 @@ function lireCorps(req) {
   if (typeof req.body === "string" && req.body) { try { return JSON.parse(req.body); } catch { return {}; } }
   return {};
 }
+
+// ---------- comptes des personnes (lot 3, 16/11/2026) ----------
+const DUREE_PERSONNE_MS = 10 * 60 * 60 * 1000;          // durée d'une connexion de personne (à confirmer par JFD)
+const DUREE_PROVISOIRE_MS = 7 * 24 * 60 * 60 * 1000;    // validité d'un mot de passe provisoire
+const MDP_LONGUEUR_MIN = 10;
+const ESSAIS_MAX = 5, BLOCAGE_MS = 15 * 60 * 1000;
+const ORIGINES_PERSONNES = ["https://phare-ashy.vercel.app"]
+  .concat(String(process.env.CARNET_ORIGINES || "").split(",").map((x) => x.trim().replace(/\/+$/, "")).filter(Boolean));
+// le jeton d'une personne n'a pas la forme de celui de l'administrateur et n'est pas signé sur la même donnée :
+// il ne peut jamais ouvrir l'écran d'administration
+function signerPersonne(id, exp) { return crypto.createHmac("sha256", secretSession()).update(`personne:${id}:${exp}`).digest("base64url"); }
+function creerJetonPersonne(id) { const exp = Date.now() + DUREE_PERSONNE_MS; return { jeton: `p.${id}.${exp}.${signerPersonne(id, exp)}`, expire: exp }; }
+function lireJetonPersonne(j) {
+  const m = /^p\.(\d+)\.(\d+)\.([A-Za-z0-9_-]+)$/.exec(String(j || ""));
+  if (!m) return null;
+  const id = Number(m[1]), exp = Number(m[2]);
+  if (!Number.isFinite(exp) || exp < Date.now()) return null;
+  const att = signerPersonne(id, exp);
+  if (att.length !== m[3].length || !crypto.timingSafeEqual(Buffer.from(att), Buffer.from(m[3]))) return null;
+  return { id, emis: exp - DUREE_PERSONNE_MS };
+}
+function hacherMdp(mdp, sel) { return crypto.scryptSync(String(mdp), String(sel), 32).toString("base64url"); }
+function mdpEgal(mdp, sel, empreinte) {
+  const a = Buffer.from(hacherMdp(mdp, sel)), b = Buffer.from(String(empreinte));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+// mot de passe provisoire : trois groupes de quatre signes, sans caractères qui se confondent (0/o, 1/l/i)
+function mdpProvisoire() {
+  const signes = "abcdefghjkmnpqrstuvwxyz23456789";
+  let t = "";
+  for (let i = 0; i < 12; i++) t += signes[crypto.randomInt(signes.length)] + (i % 4 === 3 && i < 11 ? "-" : "");
+  return t;
+}
+function sansAccents(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+// identifiant = les initiales de la fiche (arbitrage du 16/11/2026 au soir) ; à défaut prénom.nom
+function baseIdentifiant(p) {
+  const net = (t) => sansAccents(t).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return net(p.initiales).replace(/-/g, "") || [net(p.prenom), net(p.nom)].filter(Boolean).join(".") || "personne";
+}
+const attendre = (ms) => new Promise((x) => setTimeout(x, ms));
+// 19/11/2026 : les droits d'une personne se déduisent de ses profils allumés.
+//   outil ouvert (1) = outil « libre » (ouvert à tous) OU présent dans un profil allumé OU profil « tous » (admin général) allumé ;
+//   niveau 2 = lecture payante, si la colonne « version payante » est allumée et que l'outil en a une (FUSION, MONETA).
+function calculerAcces(profils, payante, outils) {
+  const tous = profils.some((p) => p.tous);
+  const ouverts = new Set();
+  for (const p of profils) for (const id of (typeof p.outils === "string" ? JSON.parse(p.outils) : (p.outils || []))) ouverts.add(id);
+  const acces = {};
+  for (const o of outils) if (o.libre || tous || ouverts.has(o.id)) acces[o.id] = payante && o.premium ? 2 : 1;
+  return acces;
+}
+async function accesDe(sql, personneId) {
+  const [profils, pers, outils] = await Promise.all([
+    sql`SELECT p.tous, p.outils FROM carnet_profil_personne pp JOIN carnet_profil p ON p.id = pp.profil WHERE pp.personne_id = ${personneId}`,
+    sql`SELECT version_payante FROM carnet_personne WHERE id = ${personneId}`,
+    sql`SELECT id, premium, libre FROM carnet_outil`]);
+  return calculerAcces(profils, !!(pers.length && pers[0].version_payante), outils);
+}
+// profils allumés d'office à la création d'une fiche (19/11/2026) : associé = les cinq profils métiers et Premium ; les autres : aucun
+const PROFILS_ASSOCIE = ["immobilier", "famille", "affaires", "international", "premium"];
+async function profilsParDefaut(sql, personneId, categorie) {
+  if (categorie !== "associe") return;
+  try {
+    for (const pr of PROFILS_ASSOCIE)
+      await sql`INSERT INTO carnet_profil_personne (personne_id, profil) SELECT ${personneId}, id FROM carnet_profil WHERE id = ${pr} ON CONFLICT DO NOTHING`;
+  } catch { /* tables des profils pas encore créées : rien à faire */ }
+}
+// adresse de l'administrateur, rendue aux personnes pour leurs demandes d'accès (variable CARNET_CONTACT, sinon la fiche de JFD)
+async function contactAdmin(sql) {
+  if (process.env.CARNET_CONTACT) return texte(process.env.CARNET_CONTACT, 200);
+  try {
+    const r = await sql`SELECT courriel_c FROM carnet_personne WHERE actif AND categorie = 'associe' AND lower(nom) = 'dumetz' ORDER BY id LIMIT 1`;
+    return r.length ? dechiffrer(r[0].courriel_c) : "";
+  } catch { return ""; }
+}
+class Refus extends Error { constructor(code, message) { super(message); this.code = code; } }
+
+// actions ouvertes aux personnes (sans session d'administrateur)
+const actionsPersonnes = {
+  async p_connexion(sql, c) {
+    const identifiant = texte(c.identifiant, 120).toLowerCase(), mdp = String(c.mdp || "");
+    const refus = async () => { await attendre(600); throw new Refus(401, "Identifiant ou mot de passe incorrect."); };
+    if (!identifiant || !mdp) return refus();
+    const r = await sql`SELECT c.*, p.prenom, p.nom, p.actif FROM carnet_compte c JOIN carnet_personne p ON p.id = c.personne_id WHERE c.identifiant = ${identifiant}`;
+    if (!r.length) { hacherMdp(mdp, "inconnu"); return refus(); }
+    const k = r[0];
+    if (k.bloque_jusqua && new Date(k.bloque_jusqua).getTime() > Date.now()) {
+      const min = Math.ceil((new Date(k.bloque_jusqua).getTime() - Date.now()) / 60000);
+      throw new Refus(429, `Trop d'essais : réessayez dans ${min} minute${min > 1 ? "s" : ""}.`);
+    }
+    if (!mdpEgal(mdp, k.sel, k.empreinte)) {
+      const echecs = (k.echecs || 0) + 1;
+      if (echecs >= ESSAIS_MAX) await sql`UPDATE carnet_compte SET echecs = 0, bloque_jusqua = ${new Date(Date.now() + BLOCAGE_MS).toISOString()}::timestamptz WHERE personne_id = ${k.personne_id}`;
+      else await sql`UPDATE carnet_compte SET echecs = ${echecs}::int WHERE personne_id = ${k.personne_id}`;
+      return refus();
+    }
+    if (!k.actif) return refus();
+    if (k.provisoire && k.expire_le && new Date(k.expire_le).getTime() < Date.now())
+      throw new Refus(401, "Ce mot de passe provisoire a expiré : demandez-en un nouveau.");
+    await sql`UPDATE carnet_compte SET echecs = 0, bloque_jusqua = NULL, derniere_connexion = NOW() WHERE personne_id = ${k.personne_id}`;
+    const j = creerJetonPersonne(k.personne_id);
+    return { jeton: j.jeton, expire: j.expire, provisoire: !!k.provisoire, personne: { prenom: k.prenom, nom: k.nom }, contact: await contactAdmin(sql),
+      acces: k.provisoire ? {} : await accesDe(sql, k.personne_id) };
+  },
+
+  // remplacement du mot de passe par la personne elle-même (obligatoire tant qu'il est provisoire)
+  async p_changer(sql, c) {
+    const j = lireJetonPersonne(c.jeton);
+    if (!j) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
+    const ancien = String(c.ancien || ""), nouveau = String(c.nouveau || "");
+    const r = await sql`SELECT c.*, p.actif FROM carnet_compte c JOIN carnet_personne p ON p.id = c.personne_id WHERE c.personne_id = ${j.id}`;
+    if (!r.length || !r[0].actif || j.emis < new Date(r[0].mdp_le).getTime() - 2000) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
+    if (!mdpEgal(ancien, r[0].sel, r[0].empreinte)) { await attendre(600); throw new Refus(400, "Le mot de passe actuel est incorrect."); }
+    if (nouveau.length < MDP_LONGUEUR_MIN) throw new Refus(400, `Le nouveau mot de passe doit compter au moins ${MDP_LONGUEUR_MIN} caractères.`);
+    if (nouveau.length > 200) throw new Refus(400, "Le nouveau mot de passe est trop long.");
+    if (nouveau === ancien) throw new Refus(400, "Le nouveau mot de passe doit être différent de l'ancien.");
+    if (sansAccents(nouveau).includes(r[0].identifiant)) throw new Refus(400, "Le mot de passe ne doit pas contenir votre identifiant.");
+    const sel = crypto.randomBytes(16).toString("base64url");
+    await sql`UPDATE carnet_compte SET sel = ${sel}, empreinte = ${hacherMdp(nouveau, sel)}, provisoire = FALSE, expire_le = NULL,
+              mdp_le = NOW(), demande_le = NULL, echecs = 0, bloque_jusqua = NULL WHERE personne_id = ${j.id}`;
+    const p = await sql`SELECT prenom, nom FROM carnet_personne WHERE id = ${j.id}`;
+    await journaliser(sql, j.id, nomComplet(p[0]), "mot de passe personnalisé", null, "personne");
+    const n = creerJetonPersonne(j.id);
+    return { ok: true, jeton: n.jeton, expire: n.expire, provisoire: false, contact: await contactAdmin(sql), acces: await accesDe(sql, j.id) };
+  },
+
+  // droits de la personne connectée : appelé par la page d'accueil et par chaque outil à son ouverture
+  async p_moi(sql, c) {
+    const j = lireJetonPersonne(c.jeton);
+    if (!j) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
+    const r = await sql`SELECT c.provisoire, c.mdp_le, p.prenom, p.nom, p.actif FROM carnet_compte c JOIN carnet_personne p ON p.id = c.personne_id WHERE c.personne_id = ${j.id}`;
+    if (!r.length || !r[0].actif || j.emis < new Date(r[0].mdp_le).getTime() - 2000) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
+    return { provisoire: !!r[0].provisoire, personne: { prenom: r[0].prenom, nom: r[0].nom }, contact: await contactAdmin(sql), acces: r[0].provisoire ? {} : await accesDe(sql, j.id) };
+  },
+
+  // « mot de passe oublié » : la demande est notée, JFD réinitialise depuis le tableau des accès (même réponse que l'identifiant existe ou non)
+  async p_oubli(sql, c) {
+    const identifiant = texte(c.identifiant, 120).toLowerCase();
+    await attendre(400);
+    if (identifiant) await sql`UPDATE carnet_compte SET demande_le = NOW() WHERE identifiant = ${identifiant}`;
+    return { ok: true, contact: await contactAdmin(sql) };
+  },
+};
 
 // ---------- chiffrement des coordonnées (AES-256-GCM) ----------
 function cleChiffrement() {
@@ -134,6 +282,7 @@ const actions = {
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
                 ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.ligne2)}, ${p.couleur}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null);
+      await profilsParDefaut(sql, r[0].id, p.categorie);
       return { ok: true, id: r[0].id };
     }
     const avant = (await personnes(sql, true)).find((x) => x.id === id);
@@ -211,6 +360,7 @@ const actions = {
         VALUES (${p.nom}, ${p.prenom}, ${p.civilite}, ${p.categorie}, ${p.initiales}, ${p.site_id}, ${p.sans_signature},
                 ${chiffrer(p.fonction)}, ${chiffrer(p.service)}, ${chiffrer(p.telephone)}, ${chiffrer(p.portable)}, ${chiffrer(p.courriel)}, ${emp}) RETURNING id`;
       await journaliser(sql, r[0].id, nomComplet(p), "création", null, c.origine === "ronde" ? "ronde" : "import");
+      await profilsParDefaut(sql, r[0].id, p.categorie);
       crees++;
     }
     return { ok: true, crees, ecartes };
@@ -241,6 +391,81 @@ const actions = {
     if (r.length) await journaliser(sql, null, "Clé " + r[0].outil, "révocation de clé d'accès", null);
     return { ok: true };
   },
+  // ---------- lot 3 (16/11/2026, refondu le 19/11/2026) : profils d'accès, version payante, comptes ----------
+  async acces_lire(sql) {
+    const [outils, profils, pers, liens, comptes] = await Promise.all([
+      sql`SELECT id, nom, premium, libre FROM carnet_outil ORDER BY ordre, nom`,
+      sql`SELECT id, nom, tous, outils FROM carnet_profil ORDER BY ordre, nom`,
+      sql`SELECT id, nom, prenom, civilite, categorie, fonction_c, courriel_c, version_payante FROM carnet_personne WHERE actif ORDER BY nom, prenom`,
+      sql`SELECT personne_id, profil FROM carnet_profil_personne`,
+      sql`SELECT personne_id, identifiant, provisoire, expire_le, derniere_connexion, demande_le, bloque_jusqua FROM carnet_compte`,
+    ]);
+    return {
+      outils,
+      profils: profils.map((x) => ({ id: x.id, nom: x.nom, tous: !!x.tous, outils: typeof x.outils === "string" ? JSON.parse(x.outils) : (x.outils || []) })),
+      personnes: pers.map((p) => ({ id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, fonction: dechiffrer(p.fonction_c),
+        courriel: dechiffrer(p.courriel_c), payante: !!p.version_payante })),
+      liens, comptes,
+    };
+  },
+
+  // un interrupteur de profil : allumé (actif = true) ou éteint ; effet immédiat, même sur une connexion en cours
+  async profil_poser(sql, c) {
+    const pid = parseInt(c.personne_id, 10), profil = texte(c.profil, 40), actif = c.actif === true || c.actif === "true";
+    const [p, pr] = await Promise.all([sql`SELECT prenom, nom FROM carnet_personne WHERE id = ${pid}`, sql`SELECT nom FROM carnet_profil WHERE id = ${profil}`]);
+    if (!p.length) throw new Error("Personne introuvable.");
+    if (!pr.length) throw new Error("Profil inconnu : " + profil);
+    if (actif) await sql`INSERT INTO carnet_profil_personne (personne_id, profil) VALUES (${pid}, ${profil}) ON CONFLICT DO NOTHING`;
+    else await sql`DELETE FROM carnet_profil_personne WHERE personne_id = ${pid} AND profil = ${profil}`;
+    await journaliser(sql, pid, nomComplet(p[0]), actif ? "profil allumé" : "profil éteint", pr[0].nom);
+    return { ok: true };
+  },
+
+  // la colonne « version payante » : ouvre la lecture payante de FUSION et MONETA (si la personne a accès à l'outil)
+  async payante_poser(sql, c) {
+    const pid = parseInt(c.personne_id, 10), actif = c.actif === true || c.actif === "true";
+    const p = await sql`UPDATE carnet_personne SET version_payante = ${actif} WHERE id = ${pid} RETURNING prenom, nom`;
+    if (!p.length) throw new Error("Personne introuvable.");
+    await journaliser(sql, pid, nomComplet(p[0]), actif ? "version payante ouverte" : "version payante fermée", null);
+    return { ok: true };
+  },
+
+  // ouverture du compte ou réinitialisation : un mot de passe provisoire est fabriqué et rendu UNE fois (pour le brouillon de courriel) ;
+  // seule son empreinte est gardée. L'identifiant, une fois attribué, ne change plus.
+  async compte_ouvrir(sql, c) {
+    const pid = parseInt(c.personne_id, 10);
+    const p = await sql`SELECT id, prenom, nom, civilite, initiales, actif, courriel_c FROM carnet_personne WHERE id = ${pid}`;
+    if (!p.length) throw new Error("Personne introuvable.");
+    if (!p[0].actif) throw new Error("Cette personne est inactive : pas de compte.");
+    const existant = await sql`SELECT identifiant FROM carnet_compte WHERE personne_id = ${pid}`;
+    const mdp = mdpProvisoire(), sel = crypto.randomBytes(16).toString("base64url");
+    const expire = new Date(Date.now() + DUREE_PROVISOIRE_MS).toISOString();
+    let identifiant;
+    if (existant.length) {
+      identifiant = existant[0].identifiant;
+      await sql`UPDATE carnet_compte SET sel = ${sel}, empreinte = ${hacherMdp(mdp, sel)}, provisoire = TRUE, expire_le = ${expire}::timestamptz,
+                mdp_le = NOW(), echecs = 0, bloque_jusqua = NULL, demande_le = NULL WHERE personne_id = ${pid}`;
+    } else {
+      const base = baseIdentifiant(p[0]);
+      const pris = (await sql`SELECT identifiant FROM carnet_compte WHERE identifiant LIKE ${base + "%"}`).map((x) => x.identifiant);
+      identifiant = base;
+      for (let n = 2; pris.includes(identifiant); n++) identifiant = base + n;
+      await sql`INSERT INTO carnet_compte (personne_id, identifiant, sel, empreinte, provisoire, expire_le)
+                VALUES (${pid}, ${identifiant}, ${sel}, ${hacherMdp(mdp, sel)}, TRUE, ${expire}::timestamptz)`;
+    }
+    await journaliser(sql, pid, nomComplet(p[0]), existant.length ? "mot de passe réinitialisé" : "ouverture du compte", null);
+    return { ok: true, nouveau: !existant.length, identifiant, mdp, expire_le: expire, courriel: dechiffrer(p[0].courriel_c), prenom: p[0].prenom, nom: p[0].nom, civilite: p[0].civilite || "" };
+  },
+  // fermeture du compte : la personne ne peut plus se connecter ; ses profils restent notés dans le tableau
+  async compte_fermer(sql, c) {
+    const pid = parseInt(c.personne_id, 10);
+    const r = await sql`DELETE FROM carnet_compte WHERE personne_id = ${pid} RETURNING identifiant`;
+    if (r.length) {
+      const p = await sql`SELECT prenom, nom FROM carnet_personne WHERE id = ${pid}`;
+      await journaliser(sql, pid, p.length ? nomComplet(p[0]) : r[0].identifiant, "fermeture du compte", null);
+    }
+    return { ok: true };
+  },
 };
 
 // ---------- point d'entrée ----------
@@ -248,6 +473,18 @@ module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   const fin = (code, obj) => { res.statusCode = code; res.end(JSON.stringify(obj)); };
+
+  // lot 3 : la page d'accueil et les outils connectent les personnes depuis le navigateur ; seules les origines listées sont admises,
+  // et l'en-tête Authorization n'est pas autorisé d'une autre origine (l'écran d'administration reste réservé à CARNET lui-même)
+  const origine = String(req.headers.origin || "");
+  res.setHeader("Vary", "Origin");
+  if (origine && ORIGINES_PERSONNES.includes(origine)) {
+    res.setHeader("Access-Control-Allow-Origin", origine);
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Max-Age", "600");
+  }
+  if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
 
   const manque = ["DATABASE_URL", "CARNET_MDP", "CARNET_CLE_CHIFFREMENT"].filter((v) => !process.env[v]);
   let cleOk = true;
@@ -289,6 +526,15 @@ module.exports = async (req, res) => {
   if (action === "etat") return fin(200, { pret: !manque.length && cleOk, manque, cle_invalide: !cleOk });
   if (manque.length) return fin(500, { erreur: "Variables absentes sur Vercel : " + manque.join(", ") });
   if (!cleOk) return fin(500, { erreur: "CARNET_CLE_CHIFFREMENT invalide : il faut 32 octets en base64." });
+
+  if (actionsPersonnes[action]) {
+    try { return fin(200, await actionsPersonnes[action](neon(process.env.DATABASE_URL), corps)); }
+    catch (e) {
+      if (e instanceof Refus) return fin(e.code, { erreur: e.message });
+      console.error("[carnet]", action, e);
+      return fin(500, { erreur: "Erreur serveur" });
+    }
+  }
 
   if (action === "connexion") {
     if (!egalSur(String(corps.mdp || ""), process.env.CARNET_MDP)) {
