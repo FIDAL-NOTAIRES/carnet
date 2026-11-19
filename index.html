@@ -91,8 +91,50 @@ table.annuaire .manque{white-space:normal}
 .ens .case{margin:3px 0}
 .choix-pers{max-height:260px;overflow-y:auto;border:1px solid var(--trait);border-radius:6px;padding:6px 10px;columns:2}
 .choix-pers .case{break-inside:avoid}
+/* 16/11 : tableau des accès aux outils */
+main.large{max-width:none}
+.grille-acces{max-height:calc(100vh - 150px);overflow:auto;border-radius:10px}
+table.acces{width:auto;min-width:100%;border-collapse:separate;border-spacing:0}
+table.acces th,table.acces td{padding:4px 5px;vertical-align:middle;background:#fff}
+table.acces thead th{position:sticky;top:0;z-index:3;border-bottom:2px solid var(--nuit)}
+table.acces th.col{height:112px;vertical-align:bottom;text-align:center;padding-bottom:8px}
+table.acces th.col span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;color:var(--nuit);font-size:12px;letter-spacing:.03em}
+table.acces .qui{position:sticky;left:0;z-index:2;min-width:190px;white-space:nowrap;border-right:1px solid var(--trait)}
+table.acces thead .qui{z-index:4;vertical-align:bottom}
+table.acces thead .cpt,table.acces thead .tot{vertical-align:bottom}
+table.acces .cpt{white-space:nowrap;font-size:12.5px;border-right:1px solid var(--trait)}
+table.acces .cpt .btn{padding:2px 9px;font-size:12px;margin-left:4px}
+table.acces td.col{text-align:center;padding:3px 2px}
+table.acces .tot{white-space:nowrap;color:var(--doux);font-size:12.5px;text-align:right;padding-right:12px}
+table.acces tr.groupe td{background:var(--fond);font-weight:600;color:var(--canard);padding:7px 8px}
+table.acces tr.groupe small{color:var(--doux);font-weight:normal;margin-left:4px}
+table.acces tbody tr:not(.groupe):hover td{background:#F3F8F9}
+.cas{width:38px;height:26px;border-radius:5px;border:1px solid var(--trait);background:#fff;color:#B5BDC7;font:inherit;font-size:11.5px;cursor:pointer;padding:0}
+.cas:hover{border-color:var(--canard)}
+.cas:focus-visible{outline:2px solid var(--canard);outline-offset:1px}
+.cas.n1{background:#E3F0F1;border-color:var(--canard);color:#1E5F66;font-weight:600}
+.cas.n2{background:var(--nuit);border-color:var(--nuit);color:#fff;font-weight:600}
+.cas:disabled{opacity:.5;cursor:default}
+/* 19/11/2026 : interrupteurs de profil, rouge (éteint) / vert (allumé) */
+.inter{position:relative;width:44px;height:24px;border-radius:12px;border:0;background:#C8384E;cursor:pointer;padding:0;vertical-align:middle;transition:background .15s}
+.inter::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
+.inter.on{background:#2E8B57}
+.inter.on::after{left:23px}
+.inter:focus-visible{outline:2px solid var(--nuit);outline-offset:2px}
+.inter:disabled{opacity:.5;cursor:default}
+table.acces th.prof{vertical-align:bottom;text-align:center;font-size:12.5px;color:var(--nuit);padding:6px 8px;white-space:nowrap}
+table.acces th.prof.payante,table.acces td.payante{border-left:2px solid var(--trait)}
+table.acces td.prof{text-align:center;padding:4px 8px}
+.legende-profils{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 18px;margin:10px 0 0}
+.legende-profils div{font-size:12.5px;line-height:1.45}
+.legende-profils b{display:block;color:var(--canard);font-size:13px}
+.legende-profils i{color:var(--doux);font-style:normal}
+.liste-outils{font-size:13px;line-height:1.6}
+.choix-mod{columns:2;column-gap:22px;margin-top:14px}
+.choix-mod .case{break-inside:avoid;justify-content:space-between;cursor:default}
+.choix-mod select{width:150px;padding:4px 6px}
 @media print{header,.sig .btn,.carte .btn{display:none}body{background:#fff}main{max-width:none;padding:0}details.n1{border:0;break-inside:auto}.sig{break-inside:avoid}}
-@media (max-width:700px){.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
+@media (max-width:700px){.choix-mod{columns:1}.grille,.deux{grid-template-columns:1fr}header nav{margin-left:0}}
 </style>
 </head>
 <body>
@@ -101,6 +143,7 @@ table.annuaire .manque{white-space:normal}
   <nav id="menu" hidden>
     <button type="button" data-vue="annuaire" aria-pressed="true">Annuaire</button>
     <button type="button" data-vue="signatures">Signatures</button>
+    <button type="button" data-vue="acces">Accès</button>
     <button type="button" data-vue="sites">Sites</button>
     <button type="button" data-vue="import">Import initial</button>
     <button type="button" data-vue="cles">Clés des outils</button>
@@ -182,7 +225,7 @@ document.getElementById('menu').addEventListener('click', function (e) {
   afficher();
 });
 function charger() { return api('liste').then(function (d) { DONNEES = d; afficher(); }).catch(function (err) { if (err.message !== 'session') alert(err.message); }); }
-function afficher() { ({ annuaire: vueAnnuaire, signatures: vueSignatures, sites: vueSites, import: vueImport, cles: vueCles, ronde: vueRonde, journal: vueJournal })[VUE](); }
+function afficher() { zone.classList.toggle('large', VUE === 'acces'); ({ annuaire: vueAnnuaire, signatures: vueSignatures, acces: vueAcces, sites: vueSites, import: vueImport, cles: vueCles, ronde: vueRonde, journal: vueJournal })[VUE](); }
 
 /* ---------- annuaire : 1er niveau actifs / inactifs, 2e niveau associés / collaborateurs ---------- */
 var RECH = '';
@@ -741,6 +784,171 @@ function exporterPdf(liste) {
     '</style></head><body><header><h1>Annuaire · FIDAL Notaires</h1><span>' + liste.length + ' personnes · établi le ' + new Date().toLocaleDateString('fr-FR') + '</span></header>' + corps +
     '<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
   w.document.close();
+}
+
+/* ====================================================================
+   16/11/2026 — ACCÈS AUX OUTILS (lot 3) : tableau des droits, modèles par fonction, comptes des personnes
+   Arbitrages du 14/11 : une ligne par personne, une colonne par outil ; « pas d'accès » / « accès », et pour les outils
+   à lecture payante « standard » / « premium » ; aucun accès par défaut ; modèles par fonction ; identifiant + mot de passe.
+   Arbitrage du 16/11 : le mot de passe provisoire part dans un brouillon Outlook que JFD envoie lui-même.
+   ==================================================================== */
+var ADRESSE_ACCUEIL = 'https://phare-ashy.vercel.app';
+var ACCES = null, RECH_ACCES = '';
+var GROUPES_ACCES = ['Associés', 'Notaires salariés', 'Clercs', 'Négociation', 'Comptabilité', 'Formalités', 'Autres'];
+function groupeAcces(p) {
+  if (p.categorie === 'associe') return 'Associés';
+  return ({ 'Notaire salarié': 'Notaires salariés', 'Clerc': 'Clercs', 'Négociation': 'Négociation', 'Comptabilité': 'Comptabilité', 'Formalités': 'Formalités' })[p.fonction] || 'Autres';
+}
+function vueAcces() {
+  zone.innerHTML = '<div class="carte"><h2>Accès aux outils</h2><p class="info">Chargement…</p></div>';
+  return api('acces_lire').then(function (d) { ACCES = d; dessinerAcces(); })
+    .catch(function (err) { if (err.message !== 'session') zone.innerHTML = '<div class="carte"><h2>Accès aux outils</h2><p class="erreur">' + h(err.message) + '</p><p class="info">Si les tables n’existent pas encore, exécutez d’abord le script carnet_lot3_acces.sql dans Neon.</p></div>'; });
+}
+/* 19/11/2026 : l'accès se règle uniquement par les profils (cumulables) et la colonne « version payante » */
+function aProfil(pid, prid) { return ACCES.liens.some(function (x) { return x.personne_id === pid && x.profil === prid; }); }
+function compteDe(pid) { return ACCES.comptes.find(function (c) { return c.personne_id === pid; }) || null; }
+function personneAcces(pid) { return ACCES.personnes.find(function (p) { return p.id === pid; }); }
+function nomOutil(id) { var o = ACCES.outils.find(function (x) { return x.id === id; }); return o ? o.nom : null; }
+/* outils ouverts à une personne, calculés comme le fait le serveur : libres, ou dans un profil allumé, ou tous (admin général) */
+function outilsOuverts(p) {
+  var allumes = ACCES.profils.filter(function (pr) { return aProfil(p.id, pr.id); });
+  var tous = allumes.some(function (pr) { return pr.tous; });
+  return ACCES.outils.filter(function (o) { return o.libre || tous || allumes.some(function (pr) { return pr.outils.indexOf(o.id) >= 0; }); });
+}
+function interrupteur(attrs, on, titre) {
+  return '<button type="button" class="inter' + (on ? ' on' : '') + '" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" title="' + h(titre) + '" ' + attrs + '></button>';
+}
+function etatCompte(p) {
+  var c = compteDe(p.id);
+  if (!c) return '<span class="info">aucun compte</span>';
+  var t = c.provisoire ? (c.expire_le && new Date(c.expire_le) < new Date() ? '<span class="manque">provisoire expiré</span>' : 'provisoire') : 'actif';
+  if (c.demande_le) t += ' <span class="vide">mot de passe demandé</span>';
+  return t;
+}
+function legendeProfils() {
+  var libres = ACCES.outils.filter(function (o) { return o.libre; }).map(function (o) { return o.nom; });
+  return '<div class="legende-profils">' + ACCES.profils.map(function (pr) {
+    if (pr.tous) return '<div><b>' + h(pr.nom) + '</b>tous les outils, sans restriction</div>';
+    return '<div><b>' + h(pr.nom) + '</b>' + pr.outils.map(function (id) { var n = nomOutil(id); return n ? h(n) : '<i title="Pas encore sur PLATEFORME">' + h(id.toUpperCase()) + '</i>'; }).join(', ') + '</div>';
+  }).join('') + '<div><b>Ouverts à tous</b>' + h(libres.join(', ') || '—') + '</div></div>' +
+    '<p class="info" style="margin:8px 0 0">En gris : outils inscrits dans un profil mais pas encore présents sur PLATEFORME ; ils prendront effet à leur ajout.</p>';
+}
+function dessinerAcces() {
+  var profils = ACCES.profils, q = sansAccent(RECH_ACCES), nbOutils = ACCES.outils.length;
+  var liste = ACCES.personnes.filter(function (p) { return !q || sansAccent(p.prenom + ' ' + p.nom + ' ' + p.fonction).indexOf(q) >= 0; });
+  var demandes = ACCES.personnes.filter(function (p) { var c = compteDe(p.id); return c && c.demande_le; });
+  var t = '<div class="carte"><h2 style="margin:0 0 6px">Accès aux outils</h2>' +
+    '<p class="info" style="margin:0 0 10px">Chaque personne reçoit les outils des profils allumés (en vert), cumulables. La colonne « Version payante » ouvre en plus la lecture payante de FUSION et MONETA. ' +
+    'Une personne ne se connecte que si son compte est ouvert (bouton « Compte »). ' + ACCES.comptes.length + ' compte' + (ACCES.comptes.length > 1 ? 's' : '') + ' ouvert' + (ACCES.comptes.length > 1 ? 's' : '') + ' sur ' + ACCES.personnes.length + ' personnes actives.</p>' +
+    '<details><summary style="cursor:pointer;color:var(--canard);font-weight:600">Composition des profils</summary>' + legendeProfils() + '</details>' +
+    '<div class="barre" style="margin:10px 0 0"><input type="search" id="rAcces" placeholder="Chercher une personne ou une fonction" value="' + h(RECH_ACCES) + '"></div></div>';
+  if (demandes.length) t += '<div class="carte alerte"><h3>Mot de passe oublié</h3><ul style="margin:0;padding-left:18px">' + demandes.map(function (p) {
+    return '<li>' + h(p.prenom + ' ' + p.nom) + ' a demandé un nouveau mot de passe le ' + dateFr(compteDe(p.id).demande_le) + '<button class="btn second" type="button" data-compte="' + p.id + '">Ouvrir son compte</button></li>'; }).join('') + '</ul></div>';
+  t += '<div class="carte" style="padding:0"><div class="tableau grille-acces"><table class="acces"><thead><tr><th class="qui">Personne</th><th class="cpt">Compte</th>' +
+    profils.map(function (pr) { return '<th class="prof" title="' + h(pr.tous ? 'Tous les outils' : pr.outils.map(function (id) { return nomOutil(id) || id.toUpperCase(); }).join(', ')) + '">' + h(pr.nom) + '</th>'; }).join('') +
+    '<th class="prof payante" title="Lecture payante de FUSION et MONETA">Version payante</th><th class="tot">Outils ouverts</th></tr></thead><tbody>';
+  GROUPES_ACCES.forEach(function (g) {
+    var l = liste.filter(function (p) { return groupeAcces(p) === g; });
+    if (!l.length) return;
+    t += '<tr class="groupe"><td class="qui" colspan="2">' + h(g) + ' <small>' + l.length + '</small></td><td colspan="' + (profils.length + 2) + '"></td></tr>';
+    l.forEach(function (p) {
+      t += '<tr data-ligne="' + p.id + '"><td class="qui">' + h(p.nom) + ' ' + h(p.prenom) + '</td><td class="cpt">' + etatCompte(p) + ' <button class="btn second" type="button" data-compte="' + p.id + '">Compte</button></td>' +
+        profils.map(function (pr) { var on = aProfil(p.id, pr.id);
+          return '<td class="prof">' + interrupteur('data-p="' + p.id + '" data-pr="' + h(pr.id) + '"', on, p.prenom + ' ' + p.nom + ' — ' + pr.nom + ' : ' + (on ? 'allumé' : 'éteint')) + '</td>'; }).join('') +
+        '<td class="prof payante">' + interrupteur('data-p="' + p.id + '" data-payante="1"', p.payante, p.prenom + ' ' + p.nom + ' — version payante : ' + (p.payante ? 'ouverte' : 'fermée')) + '</td>' +
+        '<td class="tot">' + outilsOuverts(p).length + ' / ' + nbOutils + '</td></tr>';
+    });
+  });
+  t += '</tbody></table></div>' + (liste.length ? '' : '<p class="info" style="padding:14px 18px">Aucune personne ne correspond à cette recherche.</p>') + '</div>';
+  zone.innerHTML = t;
+  var r = document.getElementById('rAcces');
+  r.oninput = function () { RECH_ACCES = r.value; var pos = r.selectionStart; dessinerAcces(); var n = document.getElementById('rAcces'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} };
+  zone.querySelectorAll('[data-compte]').forEach(function (b) { b.onclick = function () { fenetreCompte(personneAcces(+b.getAttribute('data-compte'))); }; });
+  zone.querySelector('table.acces').addEventListener('click', function (e) {
+    var b = e.target.closest('.inter'); if (!b || b.disabled) return;
+    var pid = +b.getAttribute('data-p'), p = personneAcces(pid), allumer = !b.classList.contains('on'), appel;
+    if (b.getAttribute('data-payante')) {
+      appel = api('payante_poser', { personne_id: pid, actif: allumer }).then(function () { p.payante = allumer; });
+    } else {
+      var prid = b.getAttribute('data-pr'), pr = ACCES.profils.find(function (x) { return x.id === prid; });
+      if (allumer && pr.tous && !confirm('Allumer « ' + pr.nom + ' » pour ' + p.prenom + ' ' + p.nom + ' ? Cette personne aura accès à tous les outils, sans restriction.')) return;
+      appel = api('profil_poser', { personne_id: pid, profil: prid, actif: allumer }).then(function () {
+        ACCES.liens = ACCES.liens.filter(function (x) { return !(x.personne_id === pid && x.profil === prid); });
+        if (allumer) ACCES.liens.push({ personne_id: pid, profil: prid });
+      });
+    }
+    b.disabled = true;
+    appel.then(function () {
+      b.disabled = false; b.classList.toggle('on', allumer); b.setAttribute('aria-checked', allumer ? 'true' : 'false');
+      b.closest('tr').querySelector('.tot').textContent = outilsOuverts(p).length + ' / ' + nbOutils;
+    }).catch(function (err) { b.disabled = false; if (err.message !== 'session') alert(err.message); });
+  });
+}
+
+/* ---------- compte d'une personne : ouverture, réinitialisation, brouillon de courriel ---------- */
+function fenetreCompte(p, resultat) {
+  var c = compteDe(p.id), f = document.getElementById('fenetre');
+  var ouverts = outilsOuverts(p), allumes = ACCES.profils.filter(function (pr) { return aProfil(p.id, pr.id); });
+  var t = '<div class="carte"><h2>' + h(p.prenom + ' ' + p.nom) + '</h2>';
+  if (resultat) {
+    t += '<p><b>' + (resultat.nouveau ? 'Compte ouvert.' : 'Mot de passe réinitialisé.') + '</b> Le mot de passe provisoire n’est affiché que maintenant ; il est valable jusqu’au ' + dateFr(resultat.expire_le) + ' et devra être remplacé à la première connexion.</p>' +
+      '<div class="grille"><div><label>Identifiant</label><p class="cle-affichee" style="margin:0">' + h(resultat.identifiant) + '</p></div><div><label>Mot de passe provisoire</label><p class="cle-affichee" style="margin:0">' + h(resultat.mdp) + '</p></div></div>' +
+      (resultat.courriel ? '<div class="actions" style="justify-content:flex-start"><button class="btn" type="button" id="bBrouillon">Préparer le brouillon Outlook</button></div><p class="info">Le brouillon s’ouvre dans Outlook, adressé à ' + h(resultat.courriel) + ' : relisez-le puis envoyez-le.</p>'
+        : '<p class="manque" style="white-space:normal">Cette fiche n’a pas de courriel : remettez l’identifiant et le mot de passe à la personne directement.</p>');
+  } else if (!c) {
+    t += '<p>Aucun compte : cette personne ne peut pas se connecter aux outils. L’identifiant sera ses initiales.</p><div class="actions" style="justify-content:flex-start"><button class="btn" type="button" id="bOuvrir">Ouvrir le compte</button></div>';
+  } else {
+    t += '<table><tbody><tr><th style="width:38%">Identifiant</th><td>' + h(c.identifiant) + '</td></tr>' +
+      '<tr><th>Mot de passe</th><td>' + (c.provisoire ? 'provisoire, valable jusqu’au ' + dateFr(c.expire_le) + (new Date(c.expire_le) < new Date() ? ' <span class="manque">(expiré)</span>' : '') : 'personnel') + '</td></tr>' +
+      '<tr><th>Dernière connexion</th><td>' + dateFr(c.derniere_connexion) + '</td></tr>' +
+      (c.demande_le ? '<tr><th>Mot de passe oublié</th><td><span class="vide">demande du ' + dateFr(c.demande_le) + '</span></td></tr>' : '') +
+      (c.bloque_jusqua && new Date(c.bloque_jusqua) > new Date() ? '<tr><th>Blocage</th><td>trop d’essais, bloqué jusqu’à ' + dateFr(c.bloque_jusqua) + '</td></tr>' : '') + '</tbody></table>' +
+      '<div class="actions" style="justify-content:flex-start"><button class="btn" type="button" id="bOuvrir">Réinitialiser le mot de passe</button><button class="btn danger" type="button" id="bFermerCompte">Fermer le compte</button></div>';
+  }
+  t += '<h3 style="margin:22px 0 6px;font-size:17px">Accès</h3><p class="info" style="margin:0 0 6px">Profils allumés : ' + (allumes.length ? allumes.map(function (pr) { return h(pr.nom); }).join(', ') : 'aucun') +
+    (p.payante ? ' ; version payante ouverte' : '') + '. Les profils se règlent dans le tableau.</p>' +
+    '<p class="liste-outils">' + ouverts.length + ' outil' + (ouverts.length > 1 ? 's' : '') + ' ouvert' + (ouverts.length > 1 ? 's' : '') + ' sur ' + ACCES.outils.length + (ouverts.length ? ' : ' + ouverts.map(function (o) { return h(o.nom); }).join(', ') : '') + '.</p>' +
+    '<p class="erreur" id="eCompte"></p><div class="actions"><button class="btn second" type="button" id="bFermer">Fermer</button></div></div>';
+  f.innerHTML = t; f.hidden = false;
+  var erreur = function (err) { if (err.message !== 'session') document.getElementById('eCompte').textContent = err.message; };
+  var recharger = function (suite) { return api('acces_lire').then(function (d) { ACCES = d; dessinerAcces(); if (suite) suite(); }); };
+  document.getElementById('bFermer').onclick = fermer;
+  var bo = document.getElementById('bOuvrir');
+  if (bo) bo.onclick = function () {
+    if (c && !confirm('Réinitialiser le mot de passe de ' + p.prenom + ' ' + p.nom + ' ? Son mot de passe actuel ne fonctionnera plus et sa connexion en cours sera coupée.')) return;
+    bo.disabled = true;
+    api('compte_ouvrir', { personne_id: p.id }).then(function (r) { return recharger(function () { fenetreCompte(personneAcces(p.id), r); }); }).catch(function (err) { bo.disabled = false; erreur(err); });
+  };
+  var bf = document.getElementById('bFermerCompte');
+  if (bf) bf.onclick = function () {
+    if (!confirm('Fermer le compte de ' + p.prenom + ' ' + p.nom + ' ? Elle ne pourra plus se connecter. Ses profils restent notés dans le tableau.')) return;
+    api('compte_fermer', { personne_id: p.id }).then(function () { return recharger(function () { fenetreCompte(personneAcces(p.id)); }); }).catch(erreur);
+  };
+  var bb = document.getElementById('bBrouillon');
+  if (bb) bb.onclick = function () { brouillonCompte(resultat); };
+}
+
+/* brouillon .eml marqué « non envoyé » : Outlook l'ouvre comme un message prêt à partir (même mécanisme qu'ARGOSAdmin et FUSION) */
+function base64Utf8(t) { var o = new TextEncoder().encode(t), b = ''; for (var i = 0; i < o.length; i += 0x8000) b += String.fromCharCode.apply(null, o.subarray(i, i + 0x8000)); return btoa(b); }
+function corpsCourrielCompte(r) {
+  var P = function (x) { return '<p style="margin:0 0 10pt">' + x + '</p>'; };
+  var moi = DONNEES.personnes.find(function (x) { return x.actif && x.categorie === 'associe' && sansAccent(x.nom) === 'dumetz'; });
+  var corps = P('Bonjour ' + h(r.prenom || '') + ',') +
+    P(r.nouveau ? 'Votre compte d’accès aux outils de l’étude est ouvert.' : 'Votre mot de passe d’accès aux outils de l’étude a été réinitialisé.') +
+    P('Adresse : <a href="' + ADRESSE_ACCUEIL + '" style="color:#33838B">' + ADRESSE_ACCUEIL + '</a><br>Identifiant : <b>' + h(r.identifiant) + '</b><br>Mot de passe provisoire : <b>' + h(r.mdp) + '</b>') +
+    P('À la première connexion, il vous sera demandé de remplacer ce mot de passe provisoire par un mot de passe personnel de dix caractères au moins. Le mot de passe provisoire est valable sept jours.') +
+    P('Les outils qui vous sont ouverts apparaissent sur la page d’accueil ; pour les autres, un bouton vous permet de m’en demander l’accès.') +
+    P('Bien cordialement,') + (moi ? signatureHTML(moi, false) : '');
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:\'Segoe UI\',sans-serif;font-size:10pt;color:#0F2238">' + corps + '</body></html>';
+}
+function brouillonCompte(r) {
+  var objet = r.nouveau ? 'Vos accès aux outils de l’étude' : 'Votre nouveau mot de passe pour les outils de l’étude';
+  var eml = ['X-Unsent: 1', 'To: ' + r.courriel, 'Subject: =?UTF-8?B?' + base64Utf8(objet) + '?=', 'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', base64Utf8(corpsCourrielCompte(r)).replace(/.{1,76}/g, '$&\r\n')].join('\r\n');
+  var lien = document.createElement('a');
+  lien.href = URL.createObjectURL(new Blob([eml], { type: 'message/rfc822' }));
+  lien.download = ('Accès outils - ' + r.prenom + ' ' + r.nom).replace(/[\\/:*?"<>|]/g, '') + '.eml';
+  document.body.appendChild(lien); lien.click(); setTimeout(function () { URL.revokeObjectURL(lien.href); lien.remove(); }, 1000);
 }
 
 demarrer();
