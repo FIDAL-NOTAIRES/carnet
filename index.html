@@ -122,6 +122,7 @@ table.acces tbody tr:not(.groupe):hover td{background:#F3F8F9}
 .inter.on::after{left:23px}
 .inter:focus-visible{outline:2px solid var(--nuit);outline-offset:2px}
 .inter:disabled{opacity:.5;cursor:default}
+.inter.impose:disabled{opacity:.55;cursor:not-allowed}
 table.acces th.prof{vertical-align:bottom;text-align:center;font-size:12.5px;color:var(--nuit);padding:6px 8px;white-space:nowrap}
 table.acces th.prof.payante,table.acces td.payante{border-left:2px solid var(--trait)}
 table.acces td.prof{text-align:center;padding:4px 8px}
@@ -815,8 +816,17 @@ function outilsOuverts(p) {
   var tous = allumes.some(function (pr) { return pr.tous; });
   return ACCES.outils.filter(function (o) { return o.libre || tous || allumes.some(function (pr) { return pr.outils.indexOf(o.id) >= 0; }); });
 }
-function interrupteur(attrs, on, titre) {
-  return '<button type="button" class="inter' + (on ? ' on' : '') + '" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" title="' + h(titre) + '" ' + attrs + '></button>';
+function interrupteur(attrs, on, titre, impose) {
+  return '<button type="button" class="inter' + (on || impose ? ' on' : '') + (impose ? ' impose' : '') + '" role="switch" aria-checked="' + (on || impose ? 'true' : 'false') + '" title="' + h(impose ? titre.replace(/ : .*$/, '') + ' : compris dans Admin général' : titre) + '" ' + attrs + (impose ? ' disabled' : '') + '></button>';
+}
+/* 19/11/2026 (soir) : l'admin général allumé emporte tous les profils et la version payante ; les interrupteurs de la ligne passent au vert, verrouillés */
+function estAdmin(p) { return ACCES.profils.some(function (pr) { return pr.tous && aProfil(p.id, pr.id); }); }
+function celluleLigne(p) {
+  var admin = estAdmin(p);
+  return ACCES.profils.map(function (pr) { var on = aProfil(p.id, pr.id);
+      return '<td class="prof">' + interrupteur('data-p="' + p.id + '" data-pr="' + h(pr.id) + '"', on, p.prenom + ' ' + p.nom + ' — ' + pr.nom + ' : ' + (on ? 'allumé' : 'éteint'), admin && !pr.tous) + '</td>'; }).join('') +
+    '<td class="prof payante">' + interrupteur('data-p="' + p.id + '" data-payante="1"', p.payante, p.prenom + ' ' + p.nom + ' — version payante : ' + (p.payante ? 'ouverte' : 'fermée'), admin) + '</td>' +
+    '<td class="tot">' + outilsOuverts(p).length + ' / ' + ACCES.outils.length + '</td>';
 }
 function etatCompte(p) {
   var c = compteDe(p.id);
@@ -838,7 +848,7 @@ function dessinerAcces() {
   var liste = ACCES.personnes.filter(function (p) { return !q || sansAccent(p.prenom + ' ' + p.nom + ' ' + p.fonction).indexOf(q) >= 0; });
   var demandes = ACCES.personnes.filter(function (p) { var c = compteDe(p.id); return c && c.demande_le; });
   var t = '<div class="carte"><h2 style="margin:0 0 6px">Accès aux outils</h2>' +
-    '<p class="info" style="margin:0 0 10px">Chaque personne reçoit les outils des profils allumés (en vert), cumulables. La colonne « Version payante » ouvre en plus la lecture payante de FUSION et MONETA. ' +
+    '<p class="info" style="margin:0 0 10px">Chaque personne reçoit les outils des profils allumés (en vert), cumulables. La colonne « Version payante » ouvre en plus la lecture payante de FUSION et MONETA. « Admin général » emporte tout : les autres interrupteurs de la ligne passent au vert, verrouillés. ' +
     'Une personne ne se connecte que si son compte est ouvert (bouton « Compte »). ' + ACCES.comptes.length + ' compte' + (ACCES.comptes.length > 1 ? 's' : '') + ' ouvert' + (ACCES.comptes.length > 1 ? 's' : '') + ' sur ' + ACCES.personnes.length + ' personnes actives.</p>' +
     '<details><summary style="cursor:pointer;color:var(--canard);font-weight:600">Composition des profils</summary>' + legendeProfils() + '</details>' +
     '<div class="barre" style="margin:10px 0 0"><input type="search" id="rAcces" placeholder="Chercher une personne ou une fonction" value="' + h(RECH_ACCES) + '"></div></div>';
@@ -853,10 +863,7 @@ function dessinerAcces() {
     t += '<tr class="groupe"><td class="qui" colspan="2">' + h(g) + ' <small>' + l.length + '</small></td><td colspan="' + (profils.length + 2) + '"></td></tr>';
     l.forEach(function (p) {
       t += '<tr data-ligne="' + p.id + '"><td class="qui">' + h(p.nom) + ' ' + h(p.prenom) + '</td><td class="cpt">' + etatCompte(p) + ' <button class="btn second" type="button" data-compte="' + p.id + '">Compte</button></td>' +
-        profils.map(function (pr) { var on = aProfil(p.id, pr.id);
-          return '<td class="prof">' + interrupteur('data-p="' + p.id + '" data-pr="' + h(pr.id) + '"', on, p.prenom + ' ' + p.nom + ' — ' + pr.nom + ' : ' + (on ? 'allumé' : 'éteint')) + '</td>'; }).join('') +
-        '<td class="prof payante">' + interrupteur('data-p="' + p.id + '" data-payante="1"', p.payante, p.prenom + ' ' + p.nom + ' — version payante : ' + (p.payante ? 'ouverte' : 'fermée')) + '</td>' +
-        '<td class="tot">' + outilsOuverts(p).length + ' / ' + nbOutils + '</td></tr>';
+        celluleLigne(p) + '</tr>';
     });
   });
   t += '</tbody></table></div>' + (liste.length ? '' : '<p class="info" style="padding:14px 18px">Aucune personne ne correspond à cette recherche.</p>') + '</div>';
@@ -879,8 +886,10 @@ function dessinerAcces() {
     }
     b.disabled = true;
     appel.then(function () {
-      b.disabled = false; b.classList.toggle('on', allumer); b.setAttribute('aria-checked', allumer ? 'true' : 'false');
-      b.closest('tr').querySelector('.tot').textContent = outilsOuverts(p).length + ' / ' + nbOutils;
+      /* la ligne est redessinée : l'admin général allume ou rend leur état aux autres interrupteurs */
+      var tr = b.closest('tr'), qui = tr.querySelectorAll('td')[0].outerHTML + tr.querySelectorAll('td')[1].outerHTML;
+      tr.innerHTML = qui + celluleLigne(p);
+      tr.querySelectorAll('[data-compte]').forEach(function (x) { x.onclick = function () { fenetreCompte(personneAcces(+x.getAttribute('data-compte'))); }; });
     }).catch(function (err) { b.disabled = false; if (err.message !== 'session') alert(err.message); });
   });
 }
@@ -905,8 +914,8 @@ function fenetreCompte(p, resultat) {
       (c.bloque_jusqua && new Date(c.bloque_jusqua) > new Date() ? '<tr><th>Blocage</th><td>trop d’essais, bloqué jusqu’à ' + dateFr(c.bloque_jusqua) + '</td></tr>' : '') + '</tbody></table>' +
       '<div class="actions" style="justify-content:flex-start"><button class="btn" type="button" id="bOuvrir">Réinitialiser le mot de passe</button><button class="btn danger" type="button" id="bFermerCompte">Fermer le compte</button></div>';
   }
-  t += '<h3 style="margin:22px 0 6px;font-size:17px">Accès</h3><p class="info" style="margin:0 0 6px">Profils allumés : ' + (allumes.length ? allumes.map(function (pr) { return h(pr.nom); }).join(', ') : 'aucun') +
-    (p.payante ? ' ; version payante ouverte' : '') + '. Les profils se règlent dans le tableau.</p>' +
+  t += '<h3 style="margin:22px 0 6px;font-size:17px">Accès</h3><p class="info" style="margin:0 0 6px">' + (estAdmin(p) ? 'Admin général : tous les outils, version payante comprise' :
+    'Profils allumés : ' + (allumes.length ? allumes.map(function (pr) { return h(pr.nom); }).join(', ') : 'aucun') + (p.payante ? ' ; version payante ouverte' : '')) + '. Les profils se règlent dans le tableau.</p>' +
     '<p class="liste-outils">' + ouverts.length + ' outil' + (ouverts.length > 1 ? 's' : '') + ' ouvert' + (ouverts.length > 1 ? 's' : '') + ' sur ' + ACCES.outils.length + (ouverts.length ? ' : ' + ouverts.map(function (o) { return h(o.nom); }).join(', ') : '') + '.</p>' +
     '<p class="erreur" id="eCompte"></p><div class="actions"><button class="btn second" type="button" id="bFermer">Fermer</button></div></div>';
   f.innerHTML = t; f.hidden = false;
