@@ -2,6 +2,7 @@
 // CARNET — api/carnet.js — lot 1 (04/11/2026) ; signatures, export, contrôle des doublons (05/11/2026) ;
 //   lot 3 (16/11/2026) : comptes des personnes et accès aux outils ; refondu le 19/11/2026 : PROFILS à interrupteurs
 //   (Immobilier, Famille, Affaires, International, Premium, Admin général) + colonne « version payante »
+//   26/11/2026 : colonne « actes et taxes » (accès au dossier des actes taxés), à part des profils, emportée par l'admin général
 // Annuaire commun des associés et collaborateurs de FIDAL Notaires.
 // Fonction serveur UNIQUE à actions (limite Vercel Hobby : 12 fonctions).
 //
@@ -111,6 +112,14 @@ async function accesDe(sql, personneId) {
     sql`SELECT id, premium, libre FROM carnet_outil`]);
   return calculerAcces(profils, !!(pers.length && pers[0].version_payante), outils);
 }
+// 26/11/2026 : la colonne « actes et taxes » ouvre le dossier des actes taxés (contrôle des calculateurs) ; l'admin général l'emporte.
+//   La colonne est lue par to_jsonb : tant que le script carnet_lot4 n'a pas été joué dans Neon, la réponse est simplement « non ».
+async function actesTaxesDe(sql, personneId) {
+  const [adm, pers] = await Promise.all([
+    sql`SELECT 1 FROM carnet_profil_personne pp JOIN carnet_profil p ON p.id = pp.profil WHERE pp.personne_id = ${personneId} AND p.tous LIMIT 1`,
+    sql`SELECT (to_jsonb(carnet_personne)->>'actes_taxes') AS actes_taxes FROM carnet_personne WHERE id = ${personneId}`]);
+  return adm.length > 0 || !!(pers.length && pers[0].actes_taxes === "true");
+}
 // profils allumés d'office à la création d'une fiche (19/11/2026) : associé = les cinq profils métiers et Premium ; les autres : aucun
 const PROFILS_ASSOCIE = ["immobilier", "famille", "affaires", "international", "premium"];
 async function profilsParDefaut(sql, personneId, categorie) {
@@ -155,7 +164,7 @@ const actionsPersonnes = {
     await sql`UPDATE carnet_compte SET echecs = 0, bloque_jusqua = NULL, derniere_connexion = NOW() WHERE personne_id = ${k.personne_id}`;
     const j = creerJetonPersonne(k.personne_id);
     return { jeton: j.jeton, expire: j.expire, provisoire: !!k.provisoire, personne: { prenom: k.prenom, nom: k.nom }, contact: await contactAdmin(sql),
-      acces: k.provisoire ? {} : await accesDe(sql, k.personne_id) };
+      acces: k.provisoire ? {} : await accesDe(sql, k.personne_id), actes_taxes: k.provisoire ? false : await actesTaxesDe(sql, k.personne_id) };
   },
 
   // remplacement du mot de passe par la personne elle-même (obligatoire tant qu'il est provisoire)
@@ -176,7 +185,7 @@ const actionsPersonnes = {
     const p = await sql`SELECT prenom, nom FROM carnet_personne WHERE id = ${j.id}`;
     await journaliser(sql, j.id, nomComplet(p[0]), "mot de passe personnalisé", null, "personne");
     const n = creerJetonPersonne(j.id);
-    return { ok: true, jeton: n.jeton, expire: n.expire, provisoire: false, contact: await contactAdmin(sql), acces: await accesDe(sql, j.id) };
+    return { ok: true, jeton: n.jeton, expire: n.expire, provisoire: false, contact: await contactAdmin(sql), acces: await accesDe(sql, j.id), actes_taxes: await actesTaxesDe(sql, j.id) };
   },
 
   // droits de la personne connectée : appelé par la page d'accueil et par chaque outil à son ouverture
@@ -185,7 +194,8 @@ const actionsPersonnes = {
     if (!j) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
     const r = await sql`SELECT c.provisoire, c.mdp_le, p.prenom, p.nom, p.actif FROM carnet_compte c JOIN carnet_personne p ON p.id = c.personne_id WHERE c.personne_id = ${j.id}`;
     if (!r.length || !r[0].actif || j.emis < new Date(r[0].mdp_le).getTime() - 2000) throw new Refus(401, "Connexion expirée, reconnectez-vous.");
-    return { provisoire: !!r[0].provisoire, personne: { prenom: r[0].prenom, nom: r[0].nom }, contact: await contactAdmin(sql), acces: r[0].provisoire ? {} : await accesDe(sql, j.id) };
+    return { provisoire: !!r[0].provisoire, personne: { prenom: r[0].prenom, nom: r[0].nom }, contact: await contactAdmin(sql), acces: r[0].provisoire ? {} : await accesDe(sql, j.id),
+      actes_taxes: r[0].provisoire ? false : await actesTaxesDe(sql, j.id) };
   },
 
   // « mot de passe oublié » : la demande est notée, JFD réinitialise depuis le tableau des accès (même réponse que l'identifiant existe ou non)
@@ -398,7 +408,7 @@ const actions = {
     const [outils, profils, pers, liens, comptes] = await Promise.all([
       sql`SELECT id, nom, premium, libre FROM carnet_outil ORDER BY ordre, nom`,
       sql`SELECT id, nom, tous, outils FROM carnet_profil ORDER BY ordre, nom`,
-      sql`SELECT id, nom, prenom, civilite, categorie, fonction_c, courriel_c, version_payante FROM carnet_personne WHERE actif ORDER BY nom, prenom`,
+      sql`SELECT id, nom, prenom, civilite, categorie, fonction_c, courriel_c, version_payante, (to_jsonb(carnet_personne)->>'actes_taxes') AS actes_taxes FROM carnet_personne WHERE actif ORDER BY nom, prenom`,
       sql`SELECT personne_id, profil FROM carnet_profil_personne`,
       sql`SELECT personne_id, identifiant, provisoire, expire_le, derniere_connexion, demande_le, bloque_jusqua FROM carnet_compte`,
     ]);
@@ -406,7 +416,7 @@ const actions = {
       outils,
       profils: profils.map((x) => ({ id: x.id, nom: x.nom, tous: !!x.tous, outils: typeof x.outils === "string" ? JSON.parse(x.outils) : (x.outils || []) })),
       personnes: pers.map((p) => ({ id: p.id, nom: p.nom, prenom: p.prenom, civilite: p.civilite || "", categorie: p.categorie, fonction: dechiffrer(p.fonction_c),
-        courriel: dechiffrer(p.courriel_c), payante: !!p.version_payante })),
+        courriel: dechiffrer(p.courriel_c), payante: !!p.version_payante, actes: p.actes_taxes === "true" })),
       liens, comptes,
     };
   },
@@ -429,6 +439,17 @@ const actions = {
     const p = await sql`UPDATE carnet_personne SET version_payante = ${actif} WHERE id = ${pid} RETURNING prenom, nom`;
     if (!p.length) throw new Error("Personne introuvable.");
     await journaliser(sql, pid, nomComplet(p[0]), actif ? "version payante ouverte" : "version payante fermée", null);
+    return { ok: true };
+  },
+
+  // la colonne « actes et taxes » (26/11/2026) : ouvre le dossier des actes taxés, à part des profils
+  async actes_taxes_poser(sql, c) {
+    const pid = parseInt(c.personne_id, 10), actif = c.actif === true || c.actif === "true";
+    let p;
+    try { p = await sql`UPDATE carnet_personne SET actes_taxes = ${actif} WHERE id = ${pid} RETURNING prenom, nom`; }
+    catch (e) { throw new Error("La colonne « actes et taxes » n'existe pas encore : exécutez le script carnet_lot4_profils.sql dans Neon."); }
+    if (!p.length) throw new Error("Personne introuvable.");
+    await journaliser(sql, pid, nomComplet(p[0]), actif ? "actes et taxes ouvert" : "actes et taxes fermé", null);
     return { ok: true };
   },
 
